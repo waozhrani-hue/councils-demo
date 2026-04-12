@@ -1,0 +1,442 @@
+// نظام إدارة المجالس — نموذج بيانات MVP
+// مرجع: TDD §3 · PRD §11
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// 1. الهوية والتنظيم
+// ─────────────────────────────────────────────
+
+model OrganizationUnit {
+  id        String   @id @default(cuid())
+  name      String
+  code      String?  @unique
+  parentId  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   OrganizationUnit?  @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children OrganizationUnit[] @relation("OrgHierarchy")
+
+  users  User[]
+  topics Topic[] @relation("RequestingOrg")
+}
+
+model SecretLevel {
+  id        String   @id @default(cuid())
+  name      String
+  sortOrder Int      @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users  User[]
+  topics Topic[]
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  passwordHash   String
+  displayName    String
+  isActive       Boolean  @default(true)
+  organizationId String?
+  maxClearanceId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization OrganizationUnit? @relation(fields: [organizationId], references: [id])
+  maxClearance SecretLevel?      @relation(fields: [maxClearanceId], references: [id])
+
+  roles               UserRole[]
+  delegationsFrom     Delegation[]          @relation("DelegationFrom")
+  delegationsTo       Delegation[]          @relation("DelegationTo")
+  topicsCreated       Topic[]               @relation("TopicCreatedBy")
+  examsAssigned       Examination[]         @relation("ExamAssignedBy")
+  examsPerformed      Examination[]         @relation("ExamPerformedBy")
+  meetingsCreated     Meeting[]             @relation("MeetingCreatedBy")
+  minutesSigned       Minutes[]             @relation("MinutesSignedBy")
+  memberFeedbacks     MinuteMemberFeedback[]
+  decisionsIssued     Decision[]            @relation("DecisionIssuedBy")
+  gsReviews           GSReview[]            @relation("GSReviewedBy")
+  notifications       Notification[]        @relation("NotificationRecipient")
+  auditLogsActual     AuditLog[]            @relation("AuditActorActual")
+  auditLogsDisplay    AuditLog[]            @relation("AuditActorDisplay")
+  configUpdates       SystemConfig[]        @relation("ConfigUpdatedBy")
+  topicStatusActions  TopicStatusLog[]      @relation("StatusLogActor")
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+model Role {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  labelAr   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userRoles UserRole[]
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  councilId String?
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  council Council? @relation(fields: [councilId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId, councilId])
+  @@index([userId])
+  @@index([councilId])
+}
+
+// ─────────────────────────────────────────────
+// 2. التفويض
+// ─────────────────────────────────────────────
+
+model Delegation {
+  id         String   @id @default(cuid())
+  state      String   @default("DELEGATION_DRAFT")
+  fromUserId String
+  toUserId   String
+  scopeType  String   // FULL_ROLE | SPECIFIC_OPERATION | TOPIC_TYPE
+  scopeJson  String   // JSON
+  validFrom  DateTime
+  validUntil DateTime
+  reason     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  fromUser User @relation("DelegationFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("DelegationTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([fromUserId, state])
+  @@index([toUserId, state])
+}
+
+// ─────────────────────────────────────────────
+// 3. المجلس
+// ─────────────────────────────────────────────
+
+model Council {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  topics    Topic[]
+  userRoles UserRole[]
+  meetings  Meeting[]
+}
+
+// ─────────────────────────────────────────────
+// 4. الموضوع والمرفقات
+// ─────────────────────────────────────────────
+
+model Topic {
+  id              String    @id @default(cuid())
+  refNumber       String    @unique
+  title           String
+  body            String?
+  status          String    @default("DRAFT")
+  secrecyLevelId  String?
+  councilId       String
+  requestingOrgId String
+  createdById     String
+  currentVersion  Int       @default(1)
+  returnType      String?   // FULL_REEXAM | PATH_CORRECTION
+  agendaOrder     Int?
+  agendaEnteredAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  secrecyLevel  SecretLevel?     @relation(fields: [secrecyLevelId], references: [id])
+  council       Council          @relation(fields: [councilId], references: [id])
+  requestingOrg OrganizationUnit @relation("RequestingOrg", fields: [requestingOrgId], references: [id])
+  createdBy     User             @relation("TopicCreatedBy", fields: [createdById], references: [id])
+
+  attachments  TopicAttachment[]
+  statusLogs   TopicStatusLog[]
+  gsReviews    GSReview[]
+  examinations Examination[]
+  meetingLinks MeetingTopicLink[]
+  decisions    Decision[]
+
+  @@index([councilId, status])
+  @@index([requestingOrgId])
+  @@index([status, agendaEnteredAt])
+}
+
+model TopicAttachment {
+  id           String   @id @default(cuid())
+  topicId      String
+  fileKey      String
+  fileName     String
+  mimeType     String?
+  sizeBytes    Int?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId])
+}
+
+model TopicStatusLog {
+  id           String   @id @default(cuid())
+  topicId      String
+  fromStatus   String?
+  toStatus     String
+  action       String
+  actorId      String
+  delegationId String?
+  reason       String?
+  version      Int
+  createdAt    DateTime @default(now())
+
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  actor User  @relation("StatusLogActor", fields: [actorId], references: [id])
+
+  @@index([topicId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// 5. مراجعة الأمين العام
+// ─────────────────────────────────────────────
+
+model GSReview {
+  id           String   @id @default(cuid())
+  topicId      String
+  reviewerId   String
+  action       String   // ACCEPT | SUSPEND | REJECT | RETURN_WRONG_COUNCIL
+  reason       String?
+  delegationId String?
+  createdAt    DateTime @default(now())
+
+  topic    Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  reviewer User  @relation("GSReviewedBy", fields: [reviewerId], references: [id])
+
+  @@index([topicId])
+}
+
+// ─────────────────────────────────────────────
+// 6. الفحص
+// ─────────────────────────────────────────────
+
+model Examination {
+  id           String   @id @default(cuid())
+  topicId      String
+  examinerId   String
+  assignedById String
+  result       String   // COMPLETE | INCOMPLETE
+  reasons      String?
+  version      Int
+  createdAt    DateTime @default(now())
+
+  topic      Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  examiner   User  @relation("ExamPerformedBy", fields: [examinerId], references: [id])
+  assignedBy User  @relation("ExamAssignedBy", fields: [assignedById], references: [id])
+
+  @@index([topicId])
+}
+
+// ─────────────────────────────────────────────
+// 7. الاجتماع والأجندة
+// ─────────────────────────────────────────────
+
+model Meeting {
+  id          String    @id @default(cuid())
+  refNumber   String    @unique
+  councilId   String
+  status      String    @default("MEETING_DRAFT_SEC")
+  title       String?
+  scheduledAt DateTime?
+  heldAt      DateTime?
+  location    String?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  council   Council @relation(fields: [councilId], references: [id])
+  createdBy User    @relation("MeetingCreatedBy", fields: [createdById], references: [id])
+
+  topicLinks MeetingTopicLink[]
+  minutes    Minutes[]
+
+  @@index([councilId, status])
+}
+
+model MeetingTopicLink {
+  id         String @id @default(cuid())
+  meetingId  String
+  topicId    String
+  orderIndex Int    @default(0)
+  slotStatus String @default("SCHEDULED") // SCHEDULED | DISCUSSED | DEFERRED
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  topic   Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, topicId])
+  @@index([meetingId])
+}
+
+// ─────────────────────────────────────────────
+// 8. المحضر ومرئيات الأعضاء
+// ─────────────────────────────────────────────
+
+model Minutes {
+  id               String    @id @default(cuid())
+  meetingId        String    @unique
+  status           String    @default("MIN_DRAFT")
+  body             String?
+  feedbackDeadline DateTime?
+  signedAt         DateTime?
+  signedById       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  signedBy  User?    @relation("MinutesSignedBy", fields: [signedById], references: [id])
+
+  feedbacks MinuteMemberFeedback[]
+  decisions Decision[]
+
+  @@index([meetingId])
+}
+
+model MinuteMemberFeedback {
+  id        String   @id @default(cuid())
+  minutesId String
+  memberId  String
+  approved  Boolean  @default(true)
+  comment   String?
+  createdAt DateTime @default(now())
+
+  minutes Minutes @relation(fields: [minutesId], references: [id], onDelete: Cascade)
+  member  User    @relation(fields: [memberId], references: [id])
+
+  @@index([minutesId])
+}
+
+// ─────────────────────────────────────────────
+// 9. القرار
+// ─────────────────────────────────────────────
+
+model Decision {
+  id         String    @id @default(cuid())
+  refNumber  String    @unique
+  topicId    String
+  minutesId  String?
+  status     String    @default("DEC_DRAFT")
+  summary    String?
+  issuedAt   DateTime?
+  issuedById String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  topic    Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  minutes  Minutes? @relation(fields: [minutesId], references: [id], onDelete: SetNull)
+  issuedBy User?    @relation("DecisionIssuedBy", fields: [issuedById], references: [id])
+
+  notifications Notification[]
+
+  @@index([topicId, status])
+}
+
+// ─────────────────────────────────────────────
+// 10. التبليغات والإشعارات
+// ─────────────────────────────────────────────
+
+model Notification {
+  id             String    @id @default(cuid())
+  type           String    // DECISION_NOTIFICATION | WORKFLOW_ALERT | SYSTEM_ALERT
+  status         String    @default("NOTIF_PENDING")
+  decisionId     String?
+  recipientId    String
+  recipientOrgId String?
+  title          String
+  body           String?
+  readAt         DateTime?
+  retryCount     Int       @default(0)
+  nextRetryAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  decision  Decision? @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+  recipient User      @relation("NotificationRecipient", fields: [recipientId], references: [id])
+
+  attempts NotificationDeliveryAttempt[]
+
+  @@index([recipientId, status])
+}
+
+model NotificationDeliveryAttempt {
+  id             String   @id @default(cuid())
+  notificationId String
+  attemptNumber  Int
+  result         String   // SUCCESS | FAIL
+  errorDetail    String?
+  attemptedAt    DateTime @default(now())
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+}
+
+// ─────────────────────────────────────────────
+// 11. سجل التدقيق
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id                String   @id @default(cuid())
+  entityType        String
+  entityId          String
+  action            String
+  actorActualId     String
+  actorDisplayId    String
+  visibilityProfile String   @default("FULL_AUDIT") // FULL_AUDIT | PRESIDENT_ISOLATED
+  delegationId      String?
+  reason            String?
+  beforeJson        String?
+  afterJson         String?
+  ipAddress         String?
+  createdAt         DateTime @default(now())
+
+  actorActual  User @relation("AuditActorActual", fields: [actorActualId], references: [id])
+  actorDisplay User @relation("AuditActorDisplay", fields: [actorDisplayId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorActualId, createdAt])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// 12. معلمات التهيئة
+// ─────────────────────────────────────────────
+
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  valueType   String   @default("STRING") // STRING | INT | BOOLEAN | JSON
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  updatedBy User? @relation("ConfigUpdatedBy", fields: [updatedById], references: [id])
+}

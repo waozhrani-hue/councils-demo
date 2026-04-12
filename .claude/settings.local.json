@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/board show HEAD:backend/src/app.module.ts)",
+      "Bash(git -C /c/board show HEAD:backend/src/main.ts)",
+      "Bash(git -C /c/board show HEAD:frontend/src/App.tsx)",
+      "Bash(git -C /c/board show HEAD:frontend/vite.config.ts)",
+      "Bash(git -C /c/board show HEAD:backend/.env.example)",
+      "Bash(git -C /c/board status --short)",
+      "Bash(git checkout:*)",
+      "Bash(git init:*)",
+      "Bash(git branch:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit --pretty)",
+      "Bash(ls node_modules/.bin/tsc*)",
+      "Bash(ls node_modules/typescript/bin/)",
+      "Bash(npx npm:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(npm ls:*)",
+      "Bash(node -e \"require\\('typescript'\\)\")",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(node -e \"try{require\\('typescript'\\);console.log\\('OK'\\)}catch\\(e\\){console.log\\('MISSING'\\)}\")",
+      "Bash(echo \"EXIT: $?\")"
+    ]
+  }
+}
