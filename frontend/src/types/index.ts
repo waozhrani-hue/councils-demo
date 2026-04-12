@@ -71,24 +71,24 @@ export interface SecretLevel {
 
 export type TopicStatus =
   | 'DRAFT'
-  | 'PENDING_DEPT_MANAGER'
-  | 'RETURNED_TO_STAFF'
-  | 'APPROVED_BY_MANAGER'
-  | 'REJECTED_BY_MANAGER'
+  | 'PENDING_DEPT_MGR'
+  | 'APPROVED'
+  | 'SENT_TO_GS'
   | 'INBOX_GS'
   | 'GS_REVIEW'
   | 'SUSPENDED'
-  | 'RETURNED_BY_GS'
-  | 'REJECTED_BY_GS'
-  | 'FORWARDED_TO_EXAM'
+  | 'RETURNED_DEPT'
+  | 'CLOSED_BY_DEPT'
+  | 'WITH_COUNCIL'
   | 'EXAM_IN_PROGRESS'
   | 'EXAM_COMPLETE'
   | 'EXAM_INCOMPLETE'
+  | 'PRESIDENT_REVIEW'
+  | 'RETURNED_COUNCIL'
   | 'IN_AGENDA_BOX'
-  | 'SCHEDULED'
-  | 'IN_SESSION'
-  | 'DECIDED'
-  | 'ARCHIVED';
+  | 'LINKED_TO_MEETING'
+  | 'DEFERRED_IN_SESSION'
+  | 'DISCUSSED';
 
 export interface Topic {
   id: string;

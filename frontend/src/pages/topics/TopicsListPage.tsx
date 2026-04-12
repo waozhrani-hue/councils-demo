@@ -14,17 +14,18 @@ const { Title } = Typography;
 
 const statusOptions: { label: string; value: TopicStatus }[] = [
   { label: 'مسودة', value: 'DRAFT' },
-  { label: 'بانتظار مدير الإدارة', value: 'PENDING_DEPT_MANAGER' },
-  { label: 'معتمد من المدير', value: 'APPROVED_BY_MANAGER' },
-  { label: 'مرفوض من المدير', value: 'REJECTED_BY_MANAGER' },
-  { label: 'معاد للموظف', value: 'RETURNED_TO_STAFF' },
+  { label: 'بانتظار مدير الإدارة', value: 'PENDING_DEPT_MGR' },
+  { label: 'معتمد', value: 'APPROVED' },
+  { label: 'مُعاد للإدارة', value: 'RETURNED_DEPT' },
   { label: 'وارد الأمانة', value: 'INBOX_GS' },
   { label: 'قيد المراجعة', value: 'GS_REVIEW' },
   { label: 'معلق', value: 'SUSPENDED' },
-  { label: 'محال للفحص', value: 'FORWARDED_TO_EXAM' },
+  { label: 'لدى المجلس', value: 'WITH_COUNCIL' },
+  { label: 'قيد الفحص', value: 'EXAM_IN_PROGRESS' },
+  { label: 'فحص مكتمل', value: 'EXAM_COMPLETE' },
+  { label: 'مراجعة الرئيس', value: 'PRESIDENT_REVIEW' },
   { label: 'في صندوق الأجندة', value: 'IN_AGENDA_BOX' },
-  { label: 'مجدول', value: 'SCHEDULED' },
-  { label: 'تم البت', value: 'DECIDED' },
+  { label: 'مرتبط باجتماع', value: 'LINKED_TO_MEETING' },
 ];
 
 export default function TopicsListPage() {
