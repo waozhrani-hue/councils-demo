@@ -8,8 +8,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { MinutesService } from './minutes.service';
@@ -19,12 +17,11 @@ import { MinutesTransitionDto } from './dto/minutes-transition.dto';
 import { MinutesFeedbackDto } from './dto/minutes-feedback.dto';
 
 @Controller()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class MinutesController {
   constructor(private readonly minutesService: MinutesService) {}
 
   @Post('meetings/:meetingId/minutes')
-  @Roles('COUNCIL_SECRETARY')
   async create(
     @Param('meetingId') meetingId: string,
     @Body() dto: CreateMinutesDto,
@@ -33,7 +30,6 @@ export class MinutesController {
   }
 
   @Patch('minutes/:id')
-  @Roles('COUNCIL_SECRETARY')
   async update(@Param('id') id: string, @Body() dto: UpdateMinutesDto) {
     return this.minutesService.update(id, dto);
   }
@@ -48,7 +44,6 @@ export class MinutesController {
   }
 
   @Post('minutes/:id/feedback')
-  @Roles('COUNCIL_MEMBER')
   async addFeedback(
     @Param('id') id: string,
     @Body() dto: MinutesFeedbackDto,

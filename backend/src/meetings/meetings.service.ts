@@ -2,73 +2,21 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
 import { MeetingTransitionDto } from './dto/meeting-transition.dto';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
-
-interface MeetingTransitionDef {
-  to: string;
-  requiredRole: string;
-}
-
-const MEETING_TRANSITION_MAP: Record<
-  string,
-  Record<string, MeetingTransitionDef>
-> = {
-  MEETING_DRAFT_SEC: {
-    SEND_TO_GS: {
-      to: 'MEETING_GS_APPROVAL',
-      requiredRole: 'COUNCIL_SECRETARY',
-    },
-  },
-  MEETING_GS_APPROVAL: {
-    GS_APPROVE: {
-      to: 'MEETING_BACK_SEC',
-      requiredRole: 'GENERAL_SECRETARY',
-    },
-    GS_RETURN: {
-      to: 'MEETING_DRAFT_SEC',
-      requiredRole: 'GENERAL_SECRETARY',
-    },
-  },
-  MEETING_BACK_SEC: {
-    SEND_TO_PRESIDENT: {
-      to: 'MEETING_PRES_APPROVAL',
-      requiredRole: 'COUNCIL_SECRETARY',
-    },
-  },
-  MEETING_PRES_APPROVAL: {
-    PRESIDENT_APPROVE: {
-      to: 'MEETING_SCHEDULED',
-      requiredRole: 'COUNCIL_PRESIDENT',
-    },
-    PRESIDENT_RETURN: {
-      to: 'MEETING_BACK_SEC',
-      requiredRole: 'COUNCIL_PRESIDENT',
-    },
-  },
-  MEETING_SCHEDULED: {
-    HOLD: {
-      to: 'MEETING_HELD',
-      requiredRole: 'COUNCIL_SECRETARY',
-    },
-    ADJOURN: {
-      to: 'MEETING_ADJOURNED',
-      requiredRole: 'COUNCIL_SECRETARY',
-    },
-    CANCEL: {
-      to: 'MEETING_CANCELLED',
-      requiredRole: 'COUNCIL_SECRETARY',
-    },
-  },
-};
+import { WorkflowEngineService } from '../workflow/workflow-engine.service';
+import { DynamicPermissionService } from '../auth/dynamic-permission.service';
 
 @Injectable()
 export class MeetingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly workflowEngine: WorkflowEngineService,
+    private readonly permissionService: DynamicPermissionService,
+  ) {}
 
   async create(councilId: string, dto: CreateMeetingDto, userId: string) {
     const year = new Date().getFullYear();
@@ -89,35 +37,20 @@ export class MeetingsService {
       },
       include: {
         council: true,
-        createdBy: {
-          select: { id: true, displayName: true, email: true },
-        },
+        createdBy: { select: { id: true, displayName: true, email: true } },
       },
     });
 
-    // Link topics if provided
     if (dto.topicIds && dto.topicIds.length > 0) {
       for (let i = 0; i < dto.topicIds.length; i++) {
         const topicId = dto.topicIds[i];
-
-        // Verify topic is in IN_AGENDA_BOX
-        const topic = await this.prisma.topic.findUnique({
-          where: { id: topicId },
-        });
+        const topic = await this.prisma.topic.findUnique({ where: { id: topicId } });
         if (!topic || topic.status !== 'IN_AGENDA_BOX') {
-          throw new BadRequestException(
-            `Topic ${topicId} must be in IN_AGENDA_BOX status`,
-          );
+          throw new BadRequestException(`Topic ${topicId} must be in IN_AGENDA_BOX status`);
         }
-
         await this.prisma.meetingTopicLink.create({
-          data: {
-            meetingId: meeting.id,
-            topicId,
-            orderIndex: i,
-          },
+          data: { meetingId: meeting.id, topicId, orderIndex: i },
         });
-
         await this.prisma.topic.update({
           where: { id: topicId },
           data: { status: 'LINKED_TO_MEETING' },
@@ -129,22 +62,15 @@ export class MeetingsService {
   }
 
   async findAll(user: JwtPayload) {
-    const roles = user.roles ?? [];
-    const roleCodes = roles.map((r) => r.code);
-
+    const permissions = await this.permissionService.getUserPermissions(user.sub);
+    const userRoles = await this.permissionService.getUserRoles(user.sub);
     const where: Record<string, unknown> = {};
 
-    const isAdmin = roleCodes.includes('SYSTEM_ADMIN');
-    const isGS = roleCodes.includes('GENERAL_SECRETARY');
-    const isGSStaff = roleCodes.includes('GS_OFFICE_STAFF');
+    const canViewAll = permissions.includes('VIEW_ALL_TOPICS') || permissions.includes('MANAGE_USERS');
 
-    if (!isAdmin && !isGS && !isGSStaff) {
-      const councilIds = roles
-        .filter(
-          (r) =>
-            ['COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT', 'COUNCIL_MEMBER', 'EXAM_OFFICER'].includes(r.code) &&
-            r.councilId,
-        )
+    if (!canViewAll) {
+      const councilIds = userRoles
+        .filter((r) => r.scope === 'COUNCIL' && r.councilId)
         .map((r) => r.councilId!);
 
       if (councilIds.length > 0) {
@@ -159,20 +85,9 @@ export class MeetingsService {
       orderBy: { createdAt: 'desc' },
       include: {
         council: true,
-        createdBy: {
-          select: { id: true, displayName: true, email: true },
-        },
+        createdBy: { select: { id: true, displayName: true, email: true } },
         topicLinks: {
-          include: {
-            topic: {
-              select: {
-                id: true,
-                refNumber: true,
-                title: true,
-                status: true,
-              },
-            },
-          },
+          include: { topic: { select: { id: true, refNumber: true, title: true, status: true } } },
           orderBy: { orderIndex: 'asc' },
         },
       },
@@ -185,20 +100,9 @@ export class MeetingsService {
       orderBy: { createdAt: 'desc' },
       include: {
         council: true,
-        createdBy: {
-          select: { id: true, displayName: true, email: true },
-        },
+        createdBy: { select: { id: true, displayName: true, email: true } },
         topicLinks: {
-          include: {
-            topic: {
-              select: {
-                id: true,
-                refNumber: true,
-                title: true,
-                status: true,
-              },
-            },
-          },
+          include: { topic: { select: { id: true, refNumber: true, title: true, status: true } } },
           orderBy: { orderIndex: 'asc' },
         },
       },
@@ -210,103 +114,56 @@ export class MeetingsService {
       where: { id },
       include: {
         council: true,
-        createdBy: {
-          select: { id: true, displayName: true, email: true },
-        },
+        createdBy: { select: { id: true, displayName: true, email: true } },
         topicLinks: {
-          include: {
-            topic: {
-              select: {
-                id: true,
-                refNumber: true,
-                title: true,
-                status: true,
-              },
-            },
-          },
+          include: { topic: { select: { id: true, refNumber: true, title: true, status: true } } },
           orderBy: { orderIndex: 'asc' },
         },
         minutes: true,
       },
     });
-
-    if (!meeting) {
-      throw new NotFoundException('Meeting not found');
-    }
-
+    if (!meeting) throw new NotFoundException('Meeting not found');
     return meeting;
   }
 
-  async transition(
-    meetingId: string,
-    dto: MeetingTransitionDto,
-    user: JwtPayload,
-  ) {
+  async transition(meetingId: string, dto: MeetingTransitionDto, user: JwtPayload) {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
-      include: {
-        topicLinks: { include: { topic: true } },
-      },
+      include: { topicLinks: { include: { topic: true } } },
     });
+    if (!meeting) throw new NotFoundException('Meeting not found');
 
-    if (!meeting) {
-      throw new NotFoundException('Meeting not found');
-    }
+    const userPermissions = await this.permissionService.getUserPermissions(
+      user.sub,
+      meeting.councilId || undefined,
+    );
 
-    const actionMap = MEETING_TRANSITION_MAP[meeting.status];
-    if (!actionMap || !actionMap[dto.action]) {
-      throw new BadRequestException(
-        `Action '${dto.action}' is not allowed from status '${meeting.status}'`,
-      );
-    }
+    const transition = await this.workflowEngine.validateTransition(
+      'Meeting', meeting.status, dto.action, userPermissions, dto.reason,
+    );
 
-    const transitionDef = actionMap[dto.action];
+    let targetStatus = transition.toState.code;
+    targetStatus = await this.workflowEngine.executeAutoTransitions('Meeting', targetStatus);
 
-    // Check role
-    const userRoleCodes = (user.roles ?? []).map((r) => r.code);
-    if (!userRoleCodes.includes(transitionDef.requiredRole)) {
-      throw new ForbiddenException(
-        `Role '${transitionDef.requiredRole}' is required for this action`,
-      );
-    }
-
-    const updateData: Record<string, unknown> = {
-      status: transitionDef.to,
-    };
-
-    // On HOLD, set heldAt
-    if (dto.action === 'HOLD') {
-      updateData.heldAt = new Date();
-    }
+    const updateData: Record<string, unknown> = { status: targetStatus };
+    if (dto.action === 'HOLD') updateData.heldAt = new Date();
 
     const updated = await this.prisma.meeting.update({
       where: { id: meetingId },
       data: updateData,
       include: {
         council: true,
-        createdBy: {
-          select: { id: true, displayName: true, email: true },
-        },
-        topicLinks: {
-          include: { topic: true },
-          orderBy: { orderIndex: 'asc' },
-        },
+        createdBy: { select: { id: true, displayName: true, email: true } },
+        topicLinks: { include: { topic: true }, orderBy: { orderIndex: 'asc' } },
       },
     });
 
-    // On ADJOURNED or CANCELLED: return all linked topics to IN_AGENDA_BOX
-    if (
-      transitionDef.to === 'MEETING_ADJOURNED' ||
-      transitionDef.to === 'MEETING_CANCELLED'
-    ) {
+    if (targetStatus === 'MEETING_ADJOURNED' || targetStatus === 'MEETING_CANCELLED') {
       for (const link of meeting.topicLinks) {
         if (link.topic.status === 'LINKED_TO_MEETING') {
           await this.prisma.topic.update({
             where: { id: link.topicId },
-            data: {
-              status: 'IN_AGENDA_BOX',
-              agendaEnteredAt: new Date(),
-            },
+            data: { status: 'IN_AGENDA_BOX', agendaEnteredAt: new Date() },
           });
         }
       }
@@ -318,30 +175,20 @@ export class MeetingsService {
   async withdrawTopic(meetingId: string, topicId: string) {
     const link = await this.prisma.meetingTopicLink.findFirst({
       where: { meetingId, topicId },
-      include: { topic: true, meeting: true },
+      include: { topic: true },
     });
-
-    if (!link) {
-      throw new NotFoundException('Topic link not found in this meeting');
-    }
-
+    if (!link) throw new NotFoundException('Topic link not found in this meeting');
     if (link.topic.status !== 'LINKED_TO_MEETING') {
-      throw new BadRequestException(
-        'Topic must be in LINKED_TO_MEETING status to withdraw',
-      );
+      throw new BadRequestException('Topic must be in LINKED_TO_MEETING status to withdraw');
     }
 
     await this.prisma.$transaction([
       this.prisma.meetingTopicLink.delete({ where: { id: link.id } }),
       this.prisma.topic.update({
         where: { id: topicId },
-        data: {
-          status: 'IN_AGENDA_BOX',
-          agendaEnteredAt: new Date(),
-        },
+        data: { status: 'IN_AGENDA_BOX', agendaEnteredAt: new Date() },
       }),
     ]);
-
     return { withdrawn: true };
   }
 
@@ -350,47 +197,29 @@ export class MeetingsService {
       where: { meetingId, topicId },
       include: { topic: true },
     });
-
-    if (!link) {
-      throw new NotFoundException('Topic link not found in this meeting');
-    }
-
+    if (!link) throw new NotFoundException('Topic link not found in this meeting');
     if (link.topic.status !== 'LINKED_TO_MEETING') {
-      throw new BadRequestException(
-        'Topic must be in LINKED_TO_MEETING status to defer',
-      );
+      throw new BadRequestException('Topic must be in LINKED_TO_MEETING status to defer');
     }
 
     await this.prisma.$transaction([
-      this.prisma.meetingTopicLink.update({
-        where: { id: link.id },
-        data: { slotStatus: 'DEFERRED' },
-      }),
+      this.prisma.meetingTopicLink.update({ where: { id: link.id }, data: { slotStatus: 'DEFERRED' } }),
       this.prisma.topic.update({
         where: { id: topicId },
-        data: {
-          status: 'IN_AGENDA_BOX',
-          agendaEnteredAt: new Date(),
-        },
+        data: { status: 'IN_AGENDA_BOX', agendaEnteredAt: new Date() },
       }),
     ]);
-
     return { deferred: true };
   }
 
   async getAgendaBox(councilId: string) {
     return this.prisma.topic.findMany({
-      where: {
-        councilId,
-        status: 'IN_AGENDA_BOX',
-      },
+      where: { councilId, status: 'IN_AGENDA_BOX' },
       orderBy: [{ agendaOrder: 'asc' }, { agendaEnteredAt: 'asc' }],
       include: {
         secrecyLevel: true,
         requestingOrg: true,
-        createdBy: {
-          select: { id: true, displayName: true, email: true },
-        },
+        createdBy: { select: { id: true, displayName: true, email: true } },
       },
     });
   }
@@ -402,9 +231,7 @@ export class MeetingsService {
         data: { agendaOrder: index },
       }),
     );
-
     await this.prisma.$transaction(updates);
-
     return this.getAgendaBox(councilId);
   }
 }

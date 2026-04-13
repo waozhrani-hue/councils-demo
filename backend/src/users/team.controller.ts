@@ -9,8 +9,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TeamService } from './team.service';
@@ -24,13 +22,7 @@ import { AssignRoleDto } from './dto/assign-role.dto';
  * - الأمين العام → إضافة موظف مكتب الأمين
  */
 @Controller('team')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(
-  'COUNCIL_SECRETARY',
-  'DEPT_MANAGER',
-  'GENERAL_SECRETARY',
-  'SYSTEM_ADMIN',
-)
+@UseGuards(JwtAuthGuard)
 export class TeamController {
   constructor(private readonly teamService: TeamService) {}
 

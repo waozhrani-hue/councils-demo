@@ -20,7 +20,6 @@ import { randomUUID } from 'crypto';
 import { extname, join } from 'path';
 import { existsSync } from 'fs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { TopicsService } from './topics.service';
@@ -34,7 +33,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'topics');
 
 @Controller('topics')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class TopicsController {
   constructor(
     private readonly topicsService: TopicsService,

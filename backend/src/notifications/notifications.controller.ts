@@ -8,15 +8,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { NotificationsService } from './notifications.service';
 import { ManualResolveDto } from './dto/manual-resolve.dto';
 
 @Controller('notifications')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class NotificationsController {
   constructor(
     private readonly notificationsService: NotificationsService,
@@ -36,13 +34,11 @@ export class NotificationsController {
   }
 
   @Post(':id/deliver')
-  @Roles('GENERAL_SECRETARY')
   async deliver(@Param('id') id: string) {
     return this.notificationsService.deliver(id);
   }
 
   @Post(':id/manual-resolve')
-  @Roles('GENERAL_SECRETARY', 'SYSTEM_ADMIN')
   async manualResolve(
     @Param('id') id: string,
     @Body() dto: ManualResolveDto,

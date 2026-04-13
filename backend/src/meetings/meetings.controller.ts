@@ -8,8 +8,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { MeetingsService } from './meetings.service';
@@ -18,12 +16,11 @@ import { MeetingTransitionDto } from './dto/meeting-transition.dto';
 import { ReorderAgendaDto } from './dto/reorder-agenda.dto';
 
 @Controller()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class MeetingsController {
   constructor(private readonly meetingsService: MeetingsService) {}
 
   @Post('councils/:councilId/meetings')
-  @Roles('COUNCIL_SECRETARY')
   async create(
     @Param('councilId') councilId: string,
     @Body() dto: CreateMeetingDto,
@@ -57,7 +54,6 @@ export class MeetingsController {
   }
 
   @Post('meetings/:id/topics/:topicId/withdraw')
-  @Roles('COUNCIL_SECRETARY')
   async withdrawTopic(
     @Param('id') id: string,
     @Param('topicId') topicId: string,
@@ -66,7 +62,6 @@ export class MeetingsController {
   }
 
   @Patch('meetings/:id/topics/:topicId/defer')
-  @Roles('COUNCIL_PRESIDENT')
   async deferTopic(
     @Param('id') id: string,
     @Param('topicId') topicId: string,
@@ -80,7 +75,6 @@ export class MeetingsController {
   }
 
   @Patch('councils/:councilId/agenda-box/reorder')
-  @Roles('COUNCIL_SECRETARY')
   async reorderAgendaBox(
     @Param('councilId') councilId: string,
     @Body() dto: ReorderAgendaDto,
