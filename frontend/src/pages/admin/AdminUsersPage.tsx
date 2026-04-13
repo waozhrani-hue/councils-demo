@@ -48,10 +48,7 @@ export default function AdminUsersPage() {
   const [selectedRoleId, setSelectedRoleId] = useState<string | undefined>();
   const [selectedCouncilId, setSelectedCouncilId] = useState<string | undefined>();
 
-  // Track initial role for new user creation
   const watchedInitialRoleId = Form.useWatch('initialRoleId', form);
-  const watchedInitialRole = (Array.isArray(allRoles) ? allRoles : []).find((r: Role) => r.id === watchedInitialRoleId);
-  const initialRoleNeedsCouncil = watchedInitialRole?.scope === 'COUNCIL';
 
   const { data: orgUnits } = useQuery({
     queryKey: ['org-units'],
@@ -72,6 +69,10 @@ export default function AdminUsersPage() {
     queryKey: ['clearance-levels'],
     queryFn: () => apiClient.get<any[]>('/api/v1/configs/secret-levels'),
   });
+
+  // Derive initial role needs council (after allRoles is defined)
+  const watchedInitialRole = (Array.isArray(allRoles) ? allRoles : []).find((r: Role) => r.id === watchedInitialRoleId);
+  const initialRoleNeedsCouncil = watchedInitialRole?.scope === 'COUNCIL';
 
   const queryParams = new URLSearchParams();
   queryParams.set('page', String(page));
