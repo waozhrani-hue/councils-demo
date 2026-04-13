@@ -44,9 +44,14 @@ export default function AdminUsersPage() {
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [form] = Form.useForm();
 
-  // Role assignment state
+  // Role assignment state (for editing existing users)
   const [selectedRoleId, setSelectedRoleId] = useState<string | undefined>();
   const [selectedCouncilId, setSelectedCouncilId] = useState<string | undefined>();
+
+  // Track initial role for new user creation
+  const watchedInitialRoleId = Form.useWatch('initialRoleId', form);
+  const watchedInitialRole = (Array.isArray(allRoles) ? allRoles : []).find((r: Role) => r.id === watchedInitialRoleId);
+  const initialRoleNeedsCouncil = watchedInitialRole?.scope === 'COUNCIL';
 
   const { data: orgUnits } = useQuery({
     queryKey: ['org-units'],
@@ -79,8 +84,18 @@ export default function AdminUsersPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (values: Record<string, unknown>) =>
-      apiClient.post<User>('/api/v1/users', values),
+    mutationFn: async (values: Record<string, unknown>) => {
+      const { initialRoleId, initialCouncilId, ...userData } = values;
+      const newUser = await apiClient.post<User>('/api/v1/users', userData);
+      // Assign role after creation if selected
+      if (initialRoleId && (newUser as any).id) {
+        await apiClient.post(`/api/v1/users/${(newUser as any).id}/roles`, {
+          roleId: initialRoleId,
+          councilId: initialCouncilId || null,
+        });
+      }
+      return newUser;
+    },
     onSuccess: () => {
       message.success('تم إنشاء المستخدم');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
@@ -312,9 +327,22 @@ export default function AdminUsersPage() {
             <Input placeholder="أدخل البريد الإلكتروني" />
           </Form.Item>
           {!editingUser && (
-            <Form.Item name="password" label="كلمة المرور" rules={[{ required: true, message: 'مطلوب' }]}>
-              <Input.Password placeholder="أدخل كلمة المرور" />
-            </Form.Item>
+            <>
+              <Form.Item name="password" label="كلمة المرور" rules={[{ required: true, message: 'مطلوب' }]}>
+                <Input.Password placeholder="أدخل كلمة المرور" />
+              </Form.Item>
+              <Form.Item name="initialRoleId" label="الدور">
+                <Select placeholder="اختر الدور (اختياري)" allowClear showSearch
+                  filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())}
+                  options={roleOptions}
+                />
+              </Form.Item>
+              {initialRoleNeedsCouncil && (
+                <Form.Item name="initialCouncilId" label="المجلس" rules={[{ required: true, message: 'مطلوب للأدوار المرتبطة بمجلس' }]}>
+                  <Select placeholder="اختر المجلس" options={councilOptions} />
+                </Form.Item>
+              )}
+            </>
           )}
           <Form.Item name="organizationId" label="الوحدة التنظيمية">
             <Select placeholder="اختر الوحدة" allowClear showSearch
