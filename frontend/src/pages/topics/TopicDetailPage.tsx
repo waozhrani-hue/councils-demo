@@ -24,7 +24,6 @@ import {
   FileOutlined,
   DownloadOutlined,
   ExperimentOutlined,
-  PlayCircleOutlined,
   StopOutlined,
   ScheduleOutlined,
   UndoOutlined,
@@ -83,7 +82,7 @@ export default function TopicDetailPage() {
 
   // Actions that require a reason modal
   const REASON_ACTIONS = [
-    'RETURN_TO_DRAFT', 'REJECT', 'RETURN_WRONG_COUNCIL', 'SUSPEND',
+    'RETURN_TO_DRAFT', 'REJECT', 'RETURN_WRONG_COUNCIL',
     'EXAM_FAIL', 'RETURN_TO_COUNCIL',
   ];
 
@@ -189,10 +188,6 @@ export default function TopicDetailPage() {
           onClick={() => doTransition('ACCEPT')}>
           قبول وتحويل للمجلس
         </Button>,
-        <Button key="suspend" icon={<PauseCircleOutlined />}
-          onClick={() => doTransition('SUSPEND')}>
-          تعليق
-        </Button>,
         <Button key="return-wrong" icon={<RollbackOutlined />}
           onClick={() => doTransition('RETURN_WRONG_COUNCIL')}>
           إعادة (مجلس خاطئ)
@@ -200,18 +195,6 @@ export default function TopicDetailPage() {
         <Button key="reject" danger icon={<CloseOutlined />}
           onClick={() => doTransition('REJECT')}>
           رفض
-        </Button>,
-      );
-    }
-
-    // ══════════════════════════════════════════════
-    // SUSPENDED → GENERAL_SECRETARY: Resume
-    // ══════════════════════════════════════════════
-    if (status === 'SUSPENDED' && hasRole(userRoles, ['GENERAL_SECRETARY'])) {
-      actions.push(
-        <Button key="resume" type="primary" icon={<PlayCircleOutlined />}
-          onClick={() => doTransition('RESUME')}>
-          استئناف المراجعة
         </Button>,
       );
     }
