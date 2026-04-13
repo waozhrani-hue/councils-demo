@@ -136,7 +136,7 @@ export default function AdminUsersPage() {
         <Space size={[0, 4]} wrap>
           {record.roles?.map((ur: any) => (
             <Tag key={ur.id} color="blue">
-              {ur.role?.labelAr || ur.role?.code}
+              {ur.role?.nameAr || ur.role?.labelAr || ur.role?.code}
             </Tag>
           ))}
         </Space>
