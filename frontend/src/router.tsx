@@ -11,6 +11,7 @@ import ExaminationsPage from '@/pages/examinations/ExaminationsPage';
 import AgendaBoxPage from '@/pages/agenda/AgendaBoxPage';
 import MeetingsListPage from '@/pages/meetings/MeetingsListPage';
 import MeetingDetailPage from '@/pages/meetings/MeetingDetailPage';
+import MinutesListPage from '@/pages/minutes/MinutesListPage';
 import MinutesDetailPage from '@/pages/minutes/MinutesDetailPage';
 import DecisionsListPage from '@/pages/decisions/DecisionsListPage';
 import NotificationsPage from '@/pages/notifications/NotificationsPage';
@@ -45,6 +46,7 @@ export const router = createBrowserRouter([
           { path: 'agenda', element: <AgendaBoxPage /> },
           { path: 'meetings', element: <MeetingsListPage /> },
           { path: 'meetings/:id', element: <MeetingDetailPage /> },
+          { path: 'minutes', element: <MinutesListPage /> },
           { path: 'minutes/:id', element: <MinutesDetailPage /> },
           { path: 'decisions', element: <DecisionsListPage /> },
           { path: 'notifications', element: <NotificationsPage /> },

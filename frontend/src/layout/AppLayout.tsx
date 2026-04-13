@@ -93,16 +93,24 @@ export default function AppLayout() {
       label: 'لوحة المعلومات',
     });
 
-    // ── المواضيع — موظف/مدير إدارة + الأمين العام + موظف مكتب الأمين ──
-    if (hasRole(userRoles, ['DEPT_STAFF', 'DEPT_MANAGER', 'GENERAL_SECRETARY', 'GS_OFFICE_STAFF'])) {
+    // ══════════════════════════════════════════
+    // أدوار الإدارة: DEPT_STAFF, DEPT_MANAGER
+    // ══════════════════════════════════════════
+
+    // ── المواضيع — موظف/مدير إدارة (مواضيع إدارتهم) ──
+    if (hasRole(userRoles, ['DEPT_STAFF', 'DEPT_MANAGER'])) {
       items.push({
         key: '/topics',
         icon: <FileTextOutlined />,
-        label: 'المواضيع',
+        label: 'مواضيع الإدارة',
       });
     }
 
-    // ── الوارد العام — الأمين العام + موظف مكتب الأمين ──
+    // ══════════════════════════════════════════
+    // أدوار الأمانة: GENERAL_SECRETARY, GS_OFFICE_STAFF
+    // ══════════════════════════════════════════
+
+    // ── الوارد العام — فقط الأمين العام وموظف مكتبه ──
     if (hasRole(userRoles, ['GENERAL_SECRETARY', 'GS_OFFICE_STAFF'])) {
       items.push({
         key: '/inbox',
@@ -111,8 +119,21 @@ export default function AppLayout() {
       });
     }
 
-    // ── الفحص — موظف فحص + أمين المجلس + الأمين العام ──
-    if (hasRole(userRoles, ['EXAM_OFFICER', 'COUNCIL_SECRETARY', 'GENERAL_SECRETARY'])) {
+    // ── جميع المواضيع — الأمين العام فقط (إشراف عام) ──
+    if (hasRole(userRoles, ['GENERAL_SECRETARY', 'GS_OFFICE_STAFF'])) {
+      items.push({
+        key: '/topics',
+        icon: <FileTextOutlined />,
+        label: 'جميع المواضيع',
+      });
+    }
+
+    // ══════════════════════════════════════════
+    // أدوار المجلس: COUNCIL_SECRETARY, COUNCIL_PRESIDENT, COUNCIL_MEMBER, COUNCIL_STAFF, EXAM_OFFICER
+    // ══════════════════════════════════════════
+
+    // ── الفحص — موظف فحص + أمين المجلس ──
+    if (hasRole(userRoles, ['EXAM_OFFICER', 'COUNCIL_SECRETARY'])) {
       items.push({
         key: '/examinations',
         icon: <SearchOutlined />,
@@ -120,8 +141,8 @@ export default function AppLayout() {
       });
     }
 
-    // ── صندوق الأجندة — أمين المجلس + رئيس المجلس + الأمين العام ──
-    if (hasRole(userRoles, ['COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT', 'GENERAL_SECRETARY'])) {
+    // ── صندوق الأجندة — أمين المجلس فقط (إدارة الأجندة) ──
+    if (hasRole(userRoles, ['COUNCIL_SECRETARY'])) {
       items.push({
         key: '/agenda',
         icon: <CalendarOutlined />,
@@ -129,12 +150,21 @@ export default function AppLayout() {
       });
     }
 
-    // ── الاجتماعات — أمين المجلس + رئيس المجلس + الأمين العام + عضو مجلس ──
-    if (hasRole(userRoles, ['COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT', 'GENERAL_SECRETARY', 'COUNCIL_MEMBER'])) {
+    // ── الاجتماعات — أمين المجلس + رئيس المجلس + عضو مجلس + موظف مجلس ──
+    if (hasRole(userRoles, ['COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT', 'COUNCIL_MEMBER', 'COUNCIL_STAFF'])) {
       items.push({
         key: '/meetings',
         icon: <TeamOutlined />,
         label: 'الاجتماعات',
+      });
+    }
+
+    // ── المحاضر — أمين المجلس + رئيس المجلس + عضو مجلس ──
+    if (hasRole(userRoles, ['COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT', 'COUNCIL_MEMBER', 'GENERAL_SECRETARY'])) {
+      items.push({
+        key: '/minutes',
+        icon: <AuditOutlined />,
+        label: 'المحاضر',
       });
     }
 
@@ -156,24 +186,13 @@ export default function AppLayout() {
     if (hasRole(userRoles, ['COUNCIL_SECRETARY', 'DEPT_MANAGER', 'GENERAL_SECRETARY'])) {
       items.push({
         key: '/team',
-        icon: <TeamOutlined />,
+        icon: <UserOutlined />,
         label: 'إدارة الفريق',
       });
     }
 
-    // ── التفويضات ──
-    if (
-      hasRole(userRoles, [
-        'DEPT_MANAGER',
-        'GENERAL_SECRETARY',
-        'GS_OFFICE_STAFF',
-        'EXAM_OFFICER',
-        'COUNCIL_SECRETARY',
-        'COUNCIL_PRESIDENT',
-        'COUNCIL_MEMBER',
-        'SYSTEM_ADMIN',
-      ])
-    ) {
+    // ── التفويضات — الأدوار التي تمتلك صلاحيات قابلة للتفويض ──
+    if (hasRole(userRoles, ['DEPT_MANAGER', 'GENERAL_SECRETARY', 'GS_OFFICE_STAFF', 'COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT'])) {
       items.push({
         key: '/delegations',
         icon: <SwapOutlined />,
@@ -223,7 +242,7 @@ export default function AppLayout() {
     if (path.startsWith('/admin/')) return [path];
     if (path.startsWith('/topics')) return ['/topics'];
     if (path.startsWith('/meetings')) return ['/meetings'];
-    if (path.startsWith('/minutes')) return ['/meetings'];
+    if (path.startsWith('/minutes')) return ['/minutes'];
     if (path.startsWith('/agenda')) return ['/agenda'];
     return [path];
   }, [location.pathname]);

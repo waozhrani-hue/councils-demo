@@ -175,7 +175,7 @@ export default function GSInboxPage() {
             setStatus(val);
             setPage(1);
           }}
-          options={gsStatuses.map((s) => ({ label: s, value: s }))}
+          options={gsStatuses.map((s) => ({ label: { INBOX_GS: 'وارد الأمانة', GS_REVIEW: 'قيد المراجعة', SUSPENDED: 'معلّق' }[s] || s, value: s }))}
         />
       </Space>
 

@@ -134,12 +134,13 @@ export interface TopicStatusLog {
 }
 
 export type MeetingStatus =
-  | 'DRAFT'
-  | 'SCHEDULED'
-  | 'IN_SESSION'
-  | 'ADJOURNED'
-  | 'ENDED'
-  | 'CANCELLED';
+  | 'MEETING_DRAFT_SEC'
+  | 'MEETING_GS_APPROVAL'
+  | 'MEETING_PRES_APPROVAL'
+  | 'MEETING_SCHEDULED'
+  | 'MEETING_IN_SESSION'
+  | 'MEETING_HELD'
+  | 'MEETING_CANCELLED';
 
 export interface Meeting {
   id: string;
@@ -167,11 +168,13 @@ export interface MeetingTopicLink {
 }
 
 export type MinutesStatus =
-  | 'DRAFT'
-  | 'PENDING_REVIEW'
-  | 'REVIEWED'
-  | 'APPROVED'
-  | 'REJECTED';
+  | 'MIN_DRAFT'
+  | 'MIN_GS_REVIEW'
+  | 'MIN_GS_RETURNED'
+  | 'MIN_MEMBERS_CONSULT'
+  | 'MIN_TO_PRESIDENT'
+  | 'MIN_SIGNED'
+  | 'MIN_PRES_REJECT';
 
 export interface Minutes {
   id: string;
@@ -196,7 +199,7 @@ export interface MinuteMemberFeedback {
   createdAt: string;
 }
 
-export type DecisionStatus = 'ACTIVE' | 'SUPERSEDED' | 'REVOKED';
+export type DecisionStatus = 'DEC_DRAFT' | 'DEC_ISSUED';
 
 export interface Decision {
   id: string;
@@ -224,7 +227,7 @@ export interface Notification {
   createdAt: string;
 }
 
-export type DelegationStatus = 'ACTIVE' | 'EXPIRED' | 'REVOKED';
+export type DelegationStatus = 'DELEGATION_DRAFT' | 'DELEGATION_ACTIVE' | 'DELEGATION_SUSPENDED' | 'DELEGATION_REVOKED' | 'DELEGATION_EXPIRED';
 
 export interface Delegation {
   id: string;
