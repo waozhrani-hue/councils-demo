@@ -103,53 +103,59 @@ export class TopicsService {
     const limit = parseInt(query.limit ?? '20', 10);
     const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = {};
+    // Build WHERE using AND array to avoid OR conflicts
+    const andConditions: any[] = [];
 
     // ── Status filters ──
     if (query.status) {
-      where.status = query.status;
+      andConditions.push({ status: query.status });
     }
     if (query.statuses) {
       const statusList = query.statuses.split(',').map((s) => s.trim()).filter(Boolean);
       if (statusList.length > 0) {
-        where.status = { in: statusList };
+        andConditions.push({ status: { in: statusList } });
       }
     }
 
     if (query.councilId) {
-      where.councilId = query.councilId;
+      andConditions.push({ councilId: query.councilId });
     }
     if (query.orgId) {
-      where.requestingOrgId = query.orgId;
+      andConditions.push({ requestingOrgId: query.orgId });
     }
     if (query.createdById) {
-      where.createdById = query.createdById;
+      andConditions.push({ createdById: query.createdById });
     }
     if (query.search) {
-      where.OR = [
-        { title: { contains: query.search } },
-        { refNumber: { contains: query.search } },
-      ];
+      andConditions.push({
+        OR: [
+          { title: { contains: query.search, mode: 'insensitive' } },
+          { refNumber: { contains: query.search, mode: 'insensitive' } },
+        ],
+      });
     }
 
     // ── Clearance filtering ──
+    // Topics without a secrecy level are visible to everyone.
+    // Topics WITH a secrecy level require user clearance >= topic level.
     if (user.clearanceLevel !== undefined) {
-      where.secrecyLevel = {
-        sortOrder: { lte: user.clearanceLevel },
-      };
+      andConditions.push({
+        OR: [
+          { secrecyLevelId: null },
+          { secrecyLevel: { sortOrder: { lte: user.clearanceLevel } } },
+        ],
+      });
     }
 
-    // ── Role-based auto-scoping (when no explicit filters override) ──
+    // ── Role-based auto-scoping ──
     const roles = user.roles ?? [];
     const roleCodes = roles.map((r) => r.code);
 
-    // SYSTEM_ADMIN and GENERAL_SECRETARY see everything
     const isAdmin = roleCodes.includes('SYSTEM_ADMIN');
     const isGS = roleCodes.includes('GENERAL_SECRETARY');
     const isGSStaff = roleCodes.includes('GS_OFFICE_STAFF');
 
     if (!isAdmin && !isGS && !isGSStaff) {
-      // Build council-scoped and org-scoped OR conditions
       const scopeConditions: any[] = [];
 
       // Council-scoped roles see topics for their councils
@@ -180,22 +186,15 @@ export class TopicsService {
         scopeConditions.push({ createdById: user.sub });
       }
 
-      // Apply scope: if user has multiple roles, OR them together
-      if (scopeConditions.length === 1) {
-        Object.assign(where, scopeConditions[0]);
-      } else if (scopeConditions.length > 1) {
-        // Merge with any existing OR (search)
-        const existingOR = where.OR;
-        delete where.OR;
-        where.AND = [
-          { OR: scopeConditions },
-          ...(existingOR ? [{ OR: existingOR as any }] : []),
-        ];
-      } else if (scopeConditions.length === 0) {
-        // User has no qualifying role — show only own topics
-        where.createdById = user.sub;
+      if (scopeConditions.length > 0) {
+        andConditions.push({ OR: scopeConditions });
+      } else {
+        // No qualifying role — own topics only
+        andConditions.push({ createdById: user.sub });
       }
     }
+
+    const where = andConditions.length > 0 ? { AND: andConditions } : {};
 
     const [data, total] = await Promise.all([
       this.prisma.topic.findMany({

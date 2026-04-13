@@ -49,7 +49,7 @@ export default function TopicsListPage() {
 
   const queryParams = new URLSearchParams();
   queryParams.set('page', String(page));
-  queryParams.set('pageSize', String(pageSize));
+  queryParams.set('limit', String(pageSize));
   if (status) queryParams.set('status', status);
   if (councilId) queryParams.set('councilId', councilId);
   if (search) queryParams.set('search', search);
@@ -91,8 +91,8 @@ export default function TopicsListPage() {
     },
     {
       title: 'الإدارة',
-      dataIndex: ['orgUnit', 'name'],
-      key: 'orgUnit',
+      dataIndex: ['requestingOrg', 'name'],
+      key: 'requestingOrg',
       width: 150,
     },
     {
@@ -164,7 +164,7 @@ export default function TopicsListPage() {
         pagination={{
           current: page,
           pageSize,
-          total: data?.total || 0,
+          total: data?.meta?.total || data?.total || 0,
           showSizeChanger: true,
           showTotal: (total) => `الإجمالي: ${total}`,
           onChange: (p, ps) => {

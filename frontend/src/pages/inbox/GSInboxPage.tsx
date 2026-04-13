@@ -30,7 +30,7 @@ export default function GSInboxPage() {
 
   const queryParams = new URLSearchParams();
   queryParams.set('page', String(page));
-  queryParams.set('pageSize', String(pageSize));
+  queryParams.set('limit', String(pageSize));
   queryParams.set('statuses', (status ? [status] : gsStatuses).join(','));
   if (search) queryParams.set('search', search);
 
@@ -95,7 +95,7 @@ export default function GSInboxPage() {
     },
     {
       title: 'الإدارة',
-      dataIndex: ['orgUnit', 'name'],
+      dataIndex: ['requestingOrg', 'name'],
       key: 'orgUnit',
       width: 140,
     },
@@ -187,7 +187,7 @@ export default function GSInboxPage() {
         pagination={{
           current: page,
           pageSize,
-          total: data?.total || 0,
+          total: data?.meta?.total || data?.total || 0,
           showSizeChanger: true,
           showTotal: (total) => `الإجمالي: ${total}`,
           onChange: (p, ps) => {
