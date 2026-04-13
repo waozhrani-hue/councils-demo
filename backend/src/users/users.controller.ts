@@ -23,6 +23,7 @@ export class UsersController {
   @Get()
   findAll(
     @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('orgId') orgId?: string,
@@ -30,7 +31,7 @@ export class UsersController {
   ) {
     return this.usersService.findAll({
       page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      limit: (pageSize || limit) ? parseInt(pageSize || limit || '20', 10) : undefined,
       search,
       orgId,
       roleCode,

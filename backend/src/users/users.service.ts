@@ -154,21 +154,19 @@ export class UsersService {
       }
     }
 
-    const existing = await this.prisma.userRole.findUnique({
+    const existing = await this.prisma.userRole.findFirst({
       where: {
-        userId_roleId_councilId: {
-          userId,
-          roleId,
-          councilId: councilId ?? '',
-        },
+        userId,
+        roleId,
+        councilId: councilId ?? null,
       },
     });
     if (existing) {
-      throw new ConflictException('User already has this role');
+      throw new ConflictException('المستخدم يملك هذا الدور بالفعل');
     }
 
     return this.prisma.userRole.create({
-      data: { userId, roleId, councilId },
+      data: { userId, roleId, councilId: councilId || null },
       include: { role: true, council: true },
     });
   }
