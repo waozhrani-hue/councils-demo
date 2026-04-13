@@ -160,9 +160,17 @@ export class WorkflowEngineService {
    * Get all states for a workflow (for StatusBadge)
    */
   async getWorkflowStates(workflowCode: string) {
-    const workflow = await this.prisma.workflowDefinition.findUnique({
+    // Support lookup by code (TOPIC_WORKFLOW) or entityType (Topic) or shorthand (topic)
+    let workflow = await this.prisma.workflowDefinition.findUnique({
       where: { code: workflowCode },
     });
+    if (!workflow) {
+      // Try by entityType (case-insensitive match)
+      const upperCode = workflowCode.charAt(0).toUpperCase() + workflowCode.slice(1).toLowerCase();
+      workflow = await this.prisma.workflowDefinition.findFirst({
+        where: { entityType: upperCode, isActive: true },
+      });
+    }
     if (!workflow) return [];
 
     return this.prisma.workflowState.findMany({
