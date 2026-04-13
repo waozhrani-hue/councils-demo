@@ -12,6 +12,10 @@ export class UpdateCouncilDto {
   code?: string;
 
   @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

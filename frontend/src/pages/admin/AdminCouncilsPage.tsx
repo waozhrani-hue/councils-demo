@@ -35,9 +35,8 @@ export default function AdminCouncilsPage() {
   queryParams.set('pageSize', String(pageSize));
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-councils', page, pageSize],
-    queryFn: () =>
-      apiClient.get<PaginatedResponse<Council>>(`/api/v1/councils?${queryParams.toString()}`),
+    queryKey: ['admin-councils'],
+    queryFn: () => apiClient.get<Council[]>('/api/v1/councils'),
   });
 
   const createMutation = useMutation({
@@ -170,19 +169,13 @@ export default function AdminCouncilsPage() {
 
       <Table
         columns={columns}
-        dataSource={data?.data || []}
+        dataSource={Array.isArray(data) ? data : []}
         rowKey="id"
         loading={isLoading}
         pagination={{
-          current: page,
-          pageSize,
-          total: data?.total || 0,
+          pageSize: 10,
           showSizeChanger: true,
           showTotal: (total) => `الإجمالي: ${total}`,
-          onChange: (p, ps) => {
-            setPage(p);
-            setPageSize(ps);
-          },
         }}
       />
 

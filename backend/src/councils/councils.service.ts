@@ -31,17 +31,20 @@ export class CouncilsService {
   }
 
   async create(dto: CreateCouncilDto) {
+    const code = dto.code || `COUNCIL_${Date.now()}`;
+
     const existing = await this.prisma.council.findUnique({
-      where: { code: dto.code },
+      where: { code },
     });
     if (existing) {
-      throw new ConflictException(`Council code "${dto.code}" already exists`);
+      throw new ConflictException(`Council code "${code}" already exists`);
     }
 
     return this.prisma.council.create({
       data: {
         name: dto.name,
-        code: dto.code,
+        code,
+        description: dto.description,
         isActive: dto.isActive ?? true,
       },
     });
@@ -66,6 +69,7 @@ export class CouncilsService {
       data: {
         name: dto.name,
         code: dto.code,
+        description: dto.description,
         isActive: dto.isActive,
       },
     });
