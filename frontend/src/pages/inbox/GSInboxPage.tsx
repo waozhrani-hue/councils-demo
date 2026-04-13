@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table, Button, Select, Input, Space, Typography, Modal, message } from 'antd';
-import { CheckOutlined, CloseOutlined, RollbackOutlined, PauseCircleOutlined, SearchOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, RollbackOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
@@ -12,7 +12,7 @@ import dayjs from 'dayjs';
 const { Title } = Typography;
 const { TextArea } = Input;
 
-const gsStatuses: string[] = ['INBOX_GS', 'GS_REVIEW', 'SUSPENDED'];
+const gsStatuses: string[] = ['INBOX_GS', 'GS_REVIEW'];
 
 export default function GSInboxPage() {
   const navigate = useNavigate();
@@ -126,9 +126,6 @@ export default function GSInboxPage() {
                 <Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => handleAction(record.id, 'ACCEPT')}>
                   قبول
                 </Button>
-                <Button size="small" icon={<PauseCircleOutlined />} onClick={() => handleAction(record.id, 'SUSPEND')}>
-                  تعليق
-                </Button>
                 <Button size="small" icon={<RollbackOutlined />} onClick={() => handleAction(record.id, 'RETURN_WRONG_COUNCIL')}>
                   إعادة
                 </Button>
@@ -136,11 +133,6 @@ export default function GSInboxPage() {
                   رفض
                 </Button>
               </>
-            )}
-            {s === 'SUSPENDED' && (
-              <Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => handleAction(record.id, 'RESUME')}>
-                استئناف
-              </Button>
             )}
           </Space>
         );
@@ -175,7 +167,7 @@ export default function GSInboxPage() {
             setStatus(val);
             setPage(1);
           }}
-          options={gsStatuses.map((s) => ({ label: { INBOX_GS: 'وارد الأمانة', GS_REVIEW: 'قيد المراجعة', SUSPENDED: 'معلّق' }[s] || s, value: s }))}
+          options={gsStatuses.map((s) => ({ label: { INBOX_GS: 'وارد الأمانة', GS_REVIEW: 'قيد المراجعة' }[s] || s, value: s }))}
         />
       </Space>
 
