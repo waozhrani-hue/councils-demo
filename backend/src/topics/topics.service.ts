@@ -8,10 +8,14 @@ import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import { TopicQueryDto } from './dto/topic-query.dto';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { DynamicPermissionService } from '../auth/dynamic-permission.service';
 
 @Injectable()
 export class TopicsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissionService: DynamicPermissionService,
+  ) {}
 
   async create(dto: CreateTopicDto, userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -147,31 +151,26 @@ export class TopicsService {
       });
     }
 
-    // ── Role-based auto-scoping ──
-    const roles = user.roles ?? [];
-    const roleCodes = roles.map((r) => r.code);
+    // ── Permission-based auto-scoping ──
+    const permissions = await this.permissionService.getUserPermissions(user.sub);
+    const userRoles = await this.permissionService.getUserRoles(user.sub);
 
-    const isAdmin = roleCodes.includes('SYSTEM_ADMIN');
-    const isGS = roleCodes.includes('GENERAL_SECRETARY');
-    const isGSStaff = roleCodes.includes('GS_OFFICE_STAFF');
+    const canViewAll = permissions.includes('VIEW_ALL_TOPICS');
 
-    if (!isAdmin && !isGS && !isGSStaff) {
+    if (!canViewAll) {
       const scopeConditions: any[] = [];
 
       // Council-scoped roles see topics for their councils
-      const councilIds = roles
-        .filter((r) =>
-          ['COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT', 'COUNCIL_MEMBER', 'EXAM_OFFICER'].includes(r.code) &&
-          r.councilId,
-        )
+      const councilIds = userRoles
+        .filter((r) => r.scope === 'COUNCIL' && r.councilId)
         .map((r) => r.councilId!);
 
       if (councilIds.length > 0 && !query.councilId) {
         scopeConditions.push({ councilId: { in: councilIds } });
       }
 
-      // DEPT_MANAGER sees topics from their org
-      if (roleCodes.includes('DEPT_MANAGER')) {
+      // Users with APPROVE_TOPIC see topics from their org and below
+      if (permissions.includes('APPROVE_TOPIC')) {
         const dbUser = await this.prisma.user.findUnique({
           where: { id: user.sub },
           select: { organizationId: true },
@@ -181,15 +180,15 @@ export class TopicsService {
         }
       }
 
-      // DEPT_STAFF sees only their own topics
-      if (roleCodes.includes('DEPT_STAFF') && !roleCodes.includes('DEPT_MANAGER')) {
+      // Users with only VIEW_TOPICS permission see their own topics
+      if (permissions.includes('VIEW_TOPICS')) {
         scopeConditions.push({ createdById: user.sub });
       }
 
       if (scopeConditions.length > 0) {
         andConditions.push({ OR: scopeConditions });
       } else {
-        // No qualifying role — own topics only
+        // No qualifying permission — own topics only
         andConditions.push({ createdById: user.sub });
       }
     }

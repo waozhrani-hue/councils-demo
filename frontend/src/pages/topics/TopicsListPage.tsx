@@ -4,43 +4,28 @@ import { Table, Button, Select, Input, Space, Typography } from 'antd';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import { useAuthStore } from '@/lib/auth';
 import StatusBadge from '@/components/StatusBadge';
-import type { Topic, TopicStatus, Council, PaginatedResponse, RoleName } from '@/types';
+import { usePermissions, useWorkflowStates } from '@/hooks/usePermissions';
+import type { Topic, Council, PaginatedResponse } from '@/types';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
 
-const statusOptions: { label: string; value: TopicStatus }[] = [
-  { label: 'مسودة', value: 'DRAFT' },
-  { label: 'بانتظار مدير الإدارة', value: 'PENDING_DEPT_MGR' },
-  { label: 'معتمد', value: 'APPROVED' },
-  { label: 'مُعاد للإدارة', value: 'RETURNED_DEPT' },
-  { label: 'وارد الأمانة', value: 'INBOX_GS' },
-  { label: 'قيد المراجعة', value: 'GS_REVIEW' },
-  { label: 'معلق', value: 'SUSPENDED' },
-  { label: 'لدى المجلس', value: 'WITH_COUNCIL' },
-  { label: 'قيد الفحص', value: 'EXAM_IN_PROGRESS' },
-  { label: 'فحص مكتمل', value: 'EXAM_COMPLETE' },
-  { label: 'مراجعة الرئيس', value: 'PRESIDENT_REVIEW' },
-  { label: 'في صندوق الأجندة', value: 'IN_AGENDA_BOX' },
-  { label: 'مرتبط باجتماع', value: 'LINKED_TO_MEETING' },
-];
-
 export default function TopicsListPage() {
   const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [status, setStatus] = useState<TopicStatus | undefined>();
+  const [status, setStatus] = useState<string | undefined>();
   const [councilId, setCouncilId] = useState<string | undefined>();
   const [search, setSearch] = useState('');
 
-  const userRoles = user?.roles;
-  const canCreate = userRoles?.some((r) =>
-    (['DEPT_STAFF', 'DEPT_MANAGER'] as RoleName[]).includes(r.code),
-  );
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission('CREATE_TOPIC');
+
+  // Dynamic status options from workflow states
+  const topicStates = useWorkflowStates('topic');
+  const statusOptions = topicStates.map((s) => ({ label: s.nameAr, value: s.code }));
 
   const { data: councils } = useQuery({
     queryKey: ['councils'],
@@ -87,7 +72,7 @@ export default function TopicsListPage() {
       dataIndex: 'status',
       key: 'status',
       width: 180,
-      render: (s: TopicStatus) => <StatusBadge status={s} />,
+      render: (s: string) => <StatusBadge status={s} />,
     },
     {
       title: 'الإدارة',

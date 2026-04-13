@@ -1,4 +1,4 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateOrgUnitDto {
   @IsString()
@@ -12,6 +12,22 @@ export class CreateOrgUnitDto {
   @IsOptional()
   @IsString()
   parentId?: string;
+
+  @IsOptional()
+  @IsString()
+  unitType?: string;
+
+  @IsOptional()
+  @IsInt()
+  level?: number;
+
+  @IsOptional()
+  @IsString()
+  managerId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isApprovalAuthority?: boolean;
 
   @IsOptional()
   @IsBoolean()

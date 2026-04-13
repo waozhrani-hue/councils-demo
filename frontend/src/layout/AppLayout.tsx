@@ -9,32 +9,21 @@ import {
   Typography,
   Breadcrumb,
   theme,
+  Spin,
 } from 'antd';
+import * as Icons from '@ant-design/icons';
 import {
-  DashboardOutlined,
-  FileTextOutlined,
-  InboxOutlined,
-  SearchOutlined,
-  CalendarOutlined,
-  TeamOutlined,
-  CheckCircleOutlined,
   BellOutlined,
-  SwapOutlined,
-  SettingOutlined,
-  UserOutlined,
-  BankOutlined,
-  ApartmentOutlined,
-  ToolOutlined,
-  AuditOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useAuthStore } from '@/lib/auth';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import type { RoleName, UserRoleBrief } from '@/types';
+import { useMenuItems } from '@/hooks/usePermissions';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -42,6 +31,7 @@ const { Title } = Typography;
 const breadcrumbLabels: Record<string, string> = {
   dashboard: 'لوحة المعلومات',
   topics: 'المواضيع',
+  'all-topics': 'جميع المواضيع',
   new: 'إنشاء جديد',
   inbox: 'الوارد العام',
   examinations: 'الفحص',
@@ -55,14 +45,32 @@ const breadcrumbLabels: Record<string, string> = {
   admin: 'الإدارة',
   users: 'المستخدمون',
   councils: 'المجالس',
+  'org-structure': 'الهيكل التنظيمي',
+  roles: 'الأدوار والصلاحيات',
   'org-units': 'الوحدات التنظيمية',
   config: 'التهيئة',
   audit: 'التدقيق',
 };
 
-function hasRole(roles: UserRoleBrief[] | undefined, codes: RoleName[]): boolean {
-  if (!roles) return false;
-  return roles.some((r) => codes.includes(r.code));
+// Map icon name string to React element
+function getIcon(iconName: string): React.ReactNode {
+  const IconComponent = (Icons as any)[iconName];
+  return IconComponent ? <IconComponent /> : null;
+}
+
+// Convert dynamic menu items from API to Ant Design MenuProps items
+function toAntMenuItems(items: any[]): MenuProps['items'] {
+  return items.map((item) => {
+    const menuItem: any = {
+      key: item.key,
+      icon: getIcon(item.icon),
+      label: item.nameAr,
+    };
+    if (item.children && item.children.length > 0) {
+      menuItem.children = toAntMenuItems(item.children);
+    }
+    return menuItem;
+  });
 }
 
 export default function AppLayout() {
@@ -81,143 +89,9 @@ export default function AppLayout() {
   });
 
   const unreadCount = notificationsData?.count ?? 0;
-  const userRoles = user?.roles;
+  const { menuItems, isLoading: menuLoading } = useMenuItems();
 
-  const menuItems = useMemo(() => {
-    const items: MenuProps['items'] = [];
-
-    // ── لوحة المعلومات — للجميع ──
-    items.push({
-      key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: 'لوحة المعلومات',
-    });
-
-    // ══════════════════════════════════════════
-    // أدوار الإدارة: DEPT_STAFF, DEPT_MANAGER
-    // ══════════════════════════════════════════
-
-    // ── المواضيع — موظف/مدير إدارة (مواضيع إدارتهم) ──
-    if (hasRole(userRoles, ['DEPT_STAFF', 'DEPT_MANAGER'])) {
-      items.push({
-        key: '/topics',
-        icon: <FileTextOutlined />,
-        label: 'مواضيع الإدارة',
-      });
-    }
-
-    // ══════════════════════════════════════════
-    // أدوار الأمانة: GENERAL_SECRETARY, GS_OFFICE_STAFF
-    // ══════════════════════════════════════════
-
-    // ── الوارد العام — فقط الأمين العام وموظف مكتبه ──
-    if (hasRole(userRoles, ['GENERAL_SECRETARY', 'GS_OFFICE_STAFF'])) {
-      items.push({
-        key: '/inbox',
-        icon: <InboxOutlined />,
-        label: 'الوارد العام',
-      });
-    }
-
-    // ── جميع المواضيع — الأمين العام فقط (إشراف عام) ──
-    if (hasRole(userRoles, ['GENERAL_SECRETARY', 'GS_OFFICE_STAFF'])) {
-      items.push({
-        key: '/topics',
-        icon: <FileTextOutlined />,
-        label: 'جميع المواضيع',
-      });
-    }
-
-    // ══════════════════════════════════════════
-    // أدوار المجلس: COUNCIL_SECRETARY, COUNCIL_PRESIDENT, COUNCIL_MEMBER, COUNCIL_STAFF, EXAM_OFFICER
-    // ══════════════════════════════════════════
-
-    // ── الفحص — موظف فحص + أمين المجلس ──
-    if (hasRole(userRoles, ['EXAM_OFFICER', 'COUNCIL_SECRETARY'])) {
-      items.push({
-        key: '/examinations',
-        icon: <SearchOutlined />,
-        label: 'الفحص',
-      });
-    }
-
-    // ── صندوق الأجندة — أمين المجلس فقط (إدارة الأجندة) ──
-    if (hasRole(userRoles, ['COUNCIL_SECRETARY'])) {
-      items.push({
-        key: '/agenda',
-        icon: <CalendarOutlined />,
-        label: 'صندوق الأجندة',
-      });
-    }
-
-    // ── الاجتماعات — أمين المجلس + رئيس المجلس + عضو مجلس + موظف مجلس ──
-    if (hasRole(userRoles, ['COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT', 'COUNCIL_MEMBER', 'COUNCIL_STAFF'])) {
-      items.push({
-        key: '/meetings',
-        icon: <TeamOutlined />,
-        label: 'الاجتماعات',
-      });
-    }
-
-    // ── المحاضر — أمين المجلس + رئيس المجلس + عضو مجلس ──
-    if (hasRole(userRoles, ['COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT', 'COUNCIL_MEMBER', 'GENERAL_SECRETARY'])) {
-      items.push({
-        key: '/minutes',
-        icon: <AuditOutlined />,
-        label: 'المحاضر',
-      });
-    }
-
-    // ── القرارات — للجميع ──
-    items.push({
-      key: '/decisions',
-      icon: <CheckCircleOutlined />,
-      label: 'القرارات',
-    });
-
-    // ── الإشعارات — للجميع ──
-    items.push({
-      key: '/notifications',
-      icon: <BellOutlined />,
-      label: 'الإشعارات',
-    });
-
-    // ── إدارة الفريق — أمين المجلس + مدير الإدارة + الأمين العام ──
-    if (hasRole(userRoles, ['COUNCIL_SECRETARY', 'DEPT_MANAGER', 'GENERAL_SECRETARY'])) {
-      items.push({
-        key: '/team',
-        icon: <UserOutlined />,
-        label: 'إدارة الفريق',
-      });
-    }
-
-    // ── التفويضات — الأدوار التي تمتلك صلاحيات قابلة للتفويض ──
-    if (hasRole(userRoles, ['DEPT_MANAGER', 'GENERAL_SECRETARY', 'GS_OFFICE_STAFF', 'COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT'])) {
-      items.push({
-        key: '/delegations',
-        icon: <SwapOutlined />,
-        label: 'التفويضات',
-      });
-    }
-
-    // ── الإدارة — مدير النظام ──
-    if (hasRole(userRoles, ['SYSTEM_ADMIN'])) {
-      items.push({
-        key: '/admin',
-        icon: <SettingOutlined />,
-        label: 'الإدارة',
-        children: [
-          { key: '/admin/users', icon: <UserOutlined />, label: 'المستخدمون' },
-          { key: '/admin/councils', icon: <BankOutlined />, label: 'المجالس' },
-          { key: '/admin/org-units', icon: <ApartmentOutlined />, label: 'الوحدات' },
-          { key: '/admin/config', icon: <ToolOutlined />, label: 'التهيئة' },
-          { key: '/admin/audit', icon: <AuditOutlined />, label: 'التدقيق' },
-        ],
-      });
-    }
-
-    return items;
-  }, [userRoles]);
+  const antMenuItems = useMemo(() => toAntMenuItems(menuItems), [menuItems]);
 
   const pathSegments = location.pathname.split('/').filter(Boolean);
   const breadcrumbItems = [
@@ -241,6 +115,7 @@ export default function AppLayout() {
     const path = location.pathname;
     if (path.startsWith('/admin/')) return [path];
     if (path.startsWith('/topics')) return ['/topics'];
+    if (path.startsWith('/all-topics')) return ['/all-topics'];
     if (path.startsWith('/meetings')) return ['/meetings'];
     if (path.startsWith('/minutes')) return ['/minutes'];
     if (path.startsWith('/agenda')) return ['/agenda'];
@@ -272,13 +147,17 @@ export default function AppLayout() {
         >
           {collapsed ? 'المجالس' : 'نظام إدارة المجالس'}
         </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={selectedKeys}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
-        />
+        {menuLoading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
+        ) : (
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={selectedKeys}
+            items={antMenuItems}
+            onClick={({ key }) => navigate(key)}
+          />
+        )}
       </Sider>
       <Layout style={{ marginRight: collapsed ? 80 : 200, transition: 'margin 0.2s' }}>
         <Header

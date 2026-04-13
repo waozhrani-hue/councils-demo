@@ -3,21 +3,18 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-// ═══════════════════════════════════════════════════════════
-// بيانات الاختبار الشاملة — تغطي كل مسار عمل وكل دور
-// ═══════════════════════════════════════════════════════════
-
 async function main() {
-  console.log('\n🔄 بدء توليد بيانات الاختبار...\n');
+  console.log('\n🔄 بدء توليد بيانات الاختبار الديناميكية...\n');
 
-  // ─── تنظيف البيانات القديمة (باستخدام PostgreSQL TRUNCATE CASCADE) ───
-  console.log('🗑️  تنظيف البيانات القديمة...');
+  // ─── تنظيف ───
+  console.log('🗑️  تنظيف...');
   const tableNames = [
-    'AuditLog', 'NotificationDeliveryAttempt', 'Notification', 'Decision',
-    'MinuteMemberFeedback', 'Minutes', 'MeetingTopicLink', 'Meeting',
+    'TopicApprovalStep', 'AuditLog', 'NotificationDeliveryAttempt', 'Notification',
+    'Decision', 'MinuteMemberFeedback', 'Minutes', 'MeetingTopicLink', 'Meeting',
     'Examination', 'GSReview', 'TopicStatusLog', 'TopicAttachment', 'Topic',
-    'Delegation', 'SystemConfig', 'UserRole', 'Role', 'User',
-    'Council', 'OrganizationUnit', 'SecretLevel',
+    'Delegation', 'SystemConfig', 'UserRole', 'RolePermission', 'Permission',
+    'WorkflowTransition', 'WorkflowState', 'WorkflowDefinition',
+    'Role', 'User', 'Council', 'OrganizationUnit', 'SecretLevel',
   ];
   for (const t of tableNames) {
     await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${t}" CASCADE`);
@@ -26,1035 +23,594 @@ async function main() {
 
   const hash = await bcrypt.hash('Admin@123', 10);
 
-  // ─── مستويات السرية ───
+  // ═══════════════════════════════════════════════
+  // 1. مستويات السرية
+  // ═══════════════════════════════════════════════
+  console.log('📊 مستويات السرية...');
   const sl = {
     public: await prisma.secretLevel.create({ data: { name: 'عام', sortOrder: 1 } }),
     internal: await prisma.secretLevel.create({ data: { name: 'داخلي', sortOrder: 2 } }),
     confidential: await prisma.secretLevel.create({ data: { name: 'سري', sortOrder: 3 } }),
-    top: await prisma.secretLevel.create({ data: { name: 'سري للغاية', sortOrder: 4 } }),
+    topSecret: await prisma.secretLevel.create({ data: { name: 'سري للغاية', sortOrder: 4 } }),
   };
 
-  // ─── الأدوار ───
-  const roleDefs = [
-    { code: 'SYSTEM_ADMIN', labelAr: 'مدير النظام' },
-    { code: 'DEPT_STAFF', labelAr: 'موظف إدارة' },
-    { code: 'DEPT_MANAGER', labelAr: 'مدير إدارة' },
-    { code: 'GENERAL_SECRETARY', labelAr: 'الأمين العام' },
-    { code: 'GS_OFFICE_STAFF', labelAr: 'موظف مكتب الأمين العام' },
-    { code: 'EXAM_OFFICER', labelAr: 'مسؤول الفحص' },
-    { code: 'COUNCIL_SECRETARY', labelAr: 'أمين المجلس' },
-    { code: 'COUNCIL_PRESIDENT', labelAr: 'رئيس المجلس' },
-    { code: 'COUNCIL_MEMBER', labelAr: 'عضو مجلس' },
-    { code: 'COUNCIL_STAFF', labelAr: 'موظف مجلس' },
+  // ═══════════════════════════════════════════════
+  // 2. الصلاحيات الديناميكية
+  // ═══════════════════════════════════════════════
+  console.log('🔐 الصلاحيات...');
+  const permDefs = [
+    // TOPIC
+    { code: 'CREATE_TOPIC', nameAr: 'إنشاء موضوع', module: 'TOPIC' },
+    { code: 'VIEW_TOPICS', nameAr: 'عرض المواضيع', module: 'TOPIC' },
+    { code: 'VIEW_ALL_TOPICS', nameAr: 'عرض جميع المواضيع', module: 'TOPIC' },
+    { code: 'EDIT_OWN_TOPIC', nameAr: 'تعديل موضوعي', module: 'TOPIC' },
+    { code: 'SUBMIT_TOPIC', nameAr: 'إرسال موضوع', module: 'TOPIC' },
+    { code: 'APPROVE_TOPIC', nameAr: 'اعتماد موضوع (هرمي)', module: 'TOPIC' },
+    { code: 'REJECT_TOPIC', nameAr: 'رفض موضوع', module: 'TOPIC' },
+    { code: 'RETURN_TOPIC', nameAr: 'إعادة موضوع', module: 'TOPIC' },
+    { code: 'SEND_TO_GS', nameAr: 'إرسال للأمانة', module: 'TOPIC' },
+    { code: 'ACCEPT_GS', nameAr: 'قبول الأمين العام', module: 'TOPIC' },
+    { code: 'REJECT_GS', nameAr: 'رفض الأمين العام', module: 'TOPIC' },
+    { code: 'RETURN_GS', nameAr: 'إعادة الأمين العام', module: 'TOPIC' },
+    { code: 'RESUBMIT_TOPIC', nameAr: 'إعادة إرسال موضوع', module: 'TOPIC' },
+    { code: 'CLOSE_TOPIC', nameAr: 'إغلاق موضوع', module: 'TOPIC' },
+    // EXAMINATION
+    { code: 'ASSIGN_EXAM', nameAr: 'إحالة للفحص', module: 'EXAMINATION' },
+    { code: 'PERFORM_EXAM', nameAr: 'تنفيذ الفحص', module: 'EXAMINATION' },
+    { code: 'SUBMIT_TO_PRESIDENT', nameAr: 'رفع لرئيس المجلس', module: 'EXAMINATION' },
+    // COUNCIL
+    { code: 'REVIEW_AS_PRESIDENT', nameAr: 'مراجعة كرئيس مجلس', module: 'COUNCIL' },
+    { code: 'MANAGE_AGENDA', nameAr: 'إدارة صندوق الأجندة', module: 'COUNCIL' },
+    { code: 'LINK_TO_MEETING', nameAr: 'ربط باجتماع', module: 'COUNCIL' },
+    // MEETING
+    { code: 'CREATE_MEETING', nameAr: 'إنشاء اجتماع', module: 'MEETING' },
+    { code: 'VIEW_MEETINGS', nameAr: 'عرض الاجتماعات', module: 'MEETING' },
+    { code: 'APPROVE_MEETING_GS', nameAr: 'اعتماد اجتماع (أمين عام)', module: 'MEETING' },
+    { code: 'APPROVE_MEETING_PRES', nameAr: 'اعتماد اجتماع (رئيس)', module: 'MEETING' },
+    { code: 'HOLD_MEETING', nameAr: 'عقد اجتماع', module: 'MEETING' },
+    { code: 'CANCEL_MEETING', nameAr: 'إلغاء اجتماع', module: 'MEETING' },
+    // MINUTES
+    { code: 'CREATE_MINUTES', nameAr: 'إنشاء محضر', module: 'MINUTES' },
+    { code: 'VIEW_MINUTES', nameAr: 'عرض المحاضر', module: 'MINUTES' },
+    { code: 'REVIEW_MINUTES_GS', nameAr: 'مراجعة محضر (أمين عام)', module: 'MINUTES' },
+    { code: 'SIGN_MINUTES', nameAr: 'توقيع محضر', module: 'MINUTES' },
+    { code: 'PROVIDE_FEEDBACK', nameAr: 'تقديم ملاحظات على المحضر', module: 'MINUTES' },
+    // DECISION
+    { code: 'VIEW_DECISIONS', nameAr: 'عرض القرارات', module: 'DECISION' },
+    { code: 'ISSUE_DECISION', nameAr: 'إصدار قرار', module: 'DECISION' },
+    // ADMIN
+    { code: 'MANAGE_USERS', nameAr: 'إدارة المستخدمين', module: 'ADMIN' },
+    { code: 'MANAGE_ROLES', nameAr: 'إدارة الأدوار', module: 'ADMIN' },
+    { code: 'MANAGE_ORG_STRUCTURE', nameAr: 'إدارة الهيكل التنظيمي', module: 'ADMIN' },
+    { code: 'MANAGE_WORKFLOWS', nameAr: 'إدارة مسارات العمل', module: 'ADMIN' },
+    { code: 'MANAGE_COUNCILS', nameAr: 'إدارة المجالس', module: 'ADMIN' },
+    { code: 'MANAGE_CONFIG', nameAr: 'إدارة التهيئة', module: 'ADMIN' },
+    { code: 'VIEW_AUDIT', nameAr: 'عرض التدقيق', module: 'ADMIN' },
+    // DELEGATION & TEAM
+    { code: 'CREATE_DELEGATION', nameAr: 'إنشاء تفويض', module: 'DELEGATION' },
+    { code: 'MANAGE_TEAM', nameAr: 'إدارة الفريق', module: 'DELEGATION' },
+    // NOTIFICATION
+    { code: 'VIEW_NOTIFICATIONS', nameAr: 'عرض الإشعارات', module: 'NOTIFICATION' },
   ];
-  const roles: Record<string, any> = {};
+
+  const perms: Record<string, string> = {};
+  for (const p of permDefs) {
+    const created = await prisma.permission.create({ data: p });
+    perms[p.code] = created.id;
+  }
+
+  // ═══════════════════════════════════════════════
+  // 3. الأدوار الديناميكية + ربط الصلاحيات
+  // ═══════════════════════════════════════════════
+  console.log('👥 الأدوار...');
+
+  const roleDefs: { code: string; nameAr: string; scope: string; isSystem: boolean; permissions: string[] }[] = [
+    {
+      code: 'SYSTEM_ADMIN', nameAr: 'مدير النظام', scope: 'GLOBAL', isSystem: true,
+      permissions: [
+        'MANAGE_USERS', 'MANAGE_ROLES', 'MANAGE_ORG_STRUCTURE', 'MANAGE_WORKFLOWS',
+        'MANAGE_COUNCILS', 'MANAGE_CONFIG', 'VIEW_AUDIT', 'VIEW_ALL_TOPICS',
+        'VIEW_MEETINGS', 'VIEW_MINUTES', 'VIEW_DECISIONS', 'VIEW_NOTIFICATIONS',
+      ],
+    },
+    {
+      code: 'EMPLOYEE', nameAr: 'موظف', scope: 'ORG_UNIT', isSystem: true,
+      permissions: [
+        'CREATE_TOPIC', 'VIEW_TOPICS', 'EDIT_OWN_TOPIC', 'SUBMIT_TOPIC',
+        'VIEW_DECISIONS', 'VIEW_NOTIFICATIONS',
+      ],
+    },
+    {
+      code: 'ORG_MANAGER', nameAr: 'مسؤول وحدة تنظيمية', scope: 'ORG_UNIT', isSystem: true,
+      permissions: [
+        'CREATE_TOPIC', 'VIEW_TOPICS', 'EDIT_OWN_TOPIC', 'SUBMIT_TOPIC',
+        'APPROVE_TOPIC', 'REJECT_TOPIC', 'RETURN_TOPIC', 'SEND_TO_GS',
+        'RESUBMIT_TOPIC', 'CLOSE_TOPIC',
+        'MANAGE_TEAM', 'CREATE_DELEGATION',
+        'VIEW_DECISIONS', 'VIEW_NOTIFICATIONS',
+      ],
+    },
+    {
+      code: 'GENERAL_SECRETARY', nameAr: 'الأمين العام', scope: 'GLOBAL', isSystem: true,
+      permissions: [
+        'VIEW_ALL_TOPICS', 'ACCEPT_GS', 'REJECT_GS', 'RETURN_GS',
+        'APPROVE_MEETING_GS', 'REVIEW_MINUTES_GS',
+        'VIEW_MEETINGS', 'VIEW_MINUTES', 'VIEW_DECISIONS',
+        'CREATE_DELEGATION', 'MANAGE_TEAM', 'VIEW_NOTIFICATIONS',
+      ],
+    },
+    {
+      code: 'GS_OFFICE_STAFF', nameAr: 'موظف مكتب الأمين العام', scope: 'GLOBAL', isSystem: true,
+      permissions: [
+        'VIEW_ALL_TOPICS', 'VIEW_MEETINGS', 'VIEW_MINUTES', 'VIEW_DECISIONS', 'VIEW_NOTIFICATIONS',
+      ],
+    },
+    {
+      code: 'COUNCIL_SECRETARY', nameAr: 'أمين المجلس', scope: 'COUNCIL', isSystem: true,
+      permissions: [
+        'VIEW_TOPICS', 'ASSIGN_EXAM', 'SUBMIT_TO_PRESIDENT', 'MANAGE_AGENDA', 'LINK_TO_MEETING',
+        'CREATE_MEETING', 'VIEW_MEETINGS', 'HOLD_MEETING', 'CANCEL_MEETING',
+        'CREATE_MINUTES', 'VIEW_MINUTES',
+        'MANAGE_TEAM', 'CREATE_DELEGATION', 'VIEW_DECISIONS', 'VIEW_NOTIFICATIONS',
+      ],
+    },
+    {
+      code: 'COUNCIL_PRESIDENT', nameAr: 'رئيس المجلس', scope: 'COUNCIL', isSystem: true,
+      permissions: [
+        'VIEW_TOPICS', 'REVIEW_AS_PRESIDENT',
+        'VIEW_MEETINGS', 'APPROVE_MEETING_PRES',
+        'VIEW_MINUTES', 'SIGN_MINUTES',
+        'ISSUE_DECISION', 'VIEW_DECISIONS', 'VIEW_NOTIFICATIONS',
+      ],
+    },
+    {
+      code: 'COUNCIL_MEMBER', nameAr: 'عضو مجلس', scope: 'COUNCIL', isSystem: true,
+      permissions: [
+        'VIEW_MEETINGS', 'VIEW_MINUTES', 'PROVIDE_FEEDBACK', 'VIEW_DECISIONS', 'VIEW_NOTIFICATIONS',
+      ],
+    },
+    {
+      code: 'EXAM_OFFICER', nameAr: 'مسؤول فحص', scope: 'COUNCIL', isSystem: true,
+      permissions: ['PERFORM_EXAM', 'VIEW_TOPICS', 'VIEW_NOTIFICATIONS'],
+    },
+    {
+      code: 'COUNCIL_STAFF', nameAr: 'موظف مجلس', scope: 'COUNCIL', isSystem: true,
+      permissions: ['VIEW_MEETINGS', 'VIEW_DECISIONS', 'VIEW_NOTIFICATIONS'],
+    },
+  ];
+
+  const roles: Record<string, string> = {};
   for (const r of roleDefs) {
-    roles[r.code] = await prisma.role.create({ data: r });
-  }
-
-  // ─── الوحدات التنظيمية ───
-  const orgs: Record<string, any> = {};
-  const orgDefs = [
-    { code: 'GS_OFFICE', name: 'مكتب الأمين العام' },
-    { code: 'IT_DEPT', name: 'إدارة تقنية المعلومات' },
-    { code: 'HR_DEPT', name: 'إدارة الموارد البشرية' },
-    { code: 'FIN_DEPT', name: 'إدارة الشؤون المالية' },
-    { code: 'OPS_DEPT', name: 'إدارة التشغيل' },
-    { code: 'MKT_DEPT', name: 'إدارة التسويق' },
-  ];
-  for (const o of orgDefs) {
-    orgs[o.code] = await prisma.organizationUnit.create({ data: { name: o.name, code: o.code } });
-  }
-
-  // ─── المجالس ───
-  const councils: Record<string, any> = {};
-  const councilDefs = [
-    { code: 'TECH', name: 'مجلس التقنية' },
-    { code: 'HIRING', name: 'مجلس التوظيف' },
-    { code: 'FINANCE', name: 'مجلس المالية' },
-  ];
-  for (const c of councilDefs) {
-    councils[c.code] = await prisma.council.create({ data: { name: c.name, code: c.code } });
-  }
-
-  // ─── إنشاء المستخدمين ───
-  async function createUser(
-    email: string,
-    displayName: string,
-    orgCode: string,
-    clearanceId: string,
-    userRoles: { roleCode: string; councilCode?: string }[],
-  ) {
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash: hash,
-        displayName,
-        organizationId: orgs[orgCode].id,
-        maxClearanceId: clearanceId,
-      },
+    const role = await prisma.role.create({
+      data: { code: r.code, nameAr: r.nameAr, scope: r.scope, isSystem: r.isSystem },
     });
-    for (const ur of userRoles) {
-      await prisma.userRole.create({
+    roles[r.code] = role.id;
+    // ربط الصلاحيات
+    for (const pCode of r.permissions) {
+      if (perms[pCode]) {
+        await prisma.rolePermission.create({
+          data: { roleId: role.id, permissionId: perms[pCode] },
+        });
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  // 4. مسارات العمل (Workflow Definitions)
+  // ═══════════════════════════════════════════════
+  console.log('⚙️  مسارات العمل...');
+
+  // ── 4.1 مسار المواضيع ──
+  const topicWf = await prisma.workflowDefinition.create({
+    data: { code: 'TOPIC_WORKFLOW', nameAr: 'مسار المواضيع', entityType: 'Topic' },
+  });
+
+  const topicStates = [
+    { code: 'DRAFT', nameAr: 'مسودة', stateType: 'INITIAL', color: 'default', sortOrder: 1 },
+    { code: 'PENDING_APPROVAL', nameAr: 'قيد الاعتماد الهرمي', stateType: 'APPROVAL', color: 'processing', sortOrder: 2 },
+    { code: 'HIERARCHY_APPROVED', nameAr: 'معتمد من الإدارة', stateType: 'NORMAL', color: 'success', sortOrder: 3 },
+    { code: 'SENT_TO_GS', nameAr: 'مُرسل للأمانة', stateType: 'NORMAL', color: 'processing', sortOrder: 4 },
+    { code: 'INBOX_GS', nameAr: 'وارد الأمانة', stateType: 'NORMAL', color: 'warning', sortOrder: 5 },
+    { code: 'GS_REVIEW', nameAr: 'قيد مراجعة الأمين', stateType: 'NORMAL', color: 'warning', sortOrder: 6 },
+    { code: 'RETURNED_DEPT', nameAr: 'مُعاد للإدارة', stateType: 'NORMAL', color: 'error', sortOrder: 7 },
+    { code: 'CLOSED_BY_DEPT', nameAr: 'مغلق من الإدارة', stateType: 'FINAL', color: 'default', sortOrder: 8 },
+    { code: 'WITH_COUNCIL', nameAr: 'لدى المجلس', stateType: 'NORMAL', color: 'purple', sortOrder: 9 },
+    { code: 'EXAM_IN_PROGRESS', nameAr: 'قيد الفحص', stateType: 'NORMAL', color: 'processing', sortOrder: 10 },
+    { code: 'EXAM_COMPLETE', nameAr: 'فحص مكتمل', stateType: 'NORMAL', color: 'success', sortOrder: 11 },
+    { code: 'EXAM_INCOMPLETE', nameAr: 'فحص غير مكتمل', stateType: 'NORMAL', color: 'error', sortOrder: 12 },
+    { code: 'PRESIDENT_REVIEW', nameAr: 'مراجعة الرئيس', stateType: 'NORMAL', color: 'warning', sortOrder: 13 },
+    { code: 'RETURNED_COUNCIL', nameAr: 'مُعاد من الرئيس', stateType: 'NORMAL', color: 'error', sortOrder: 14 },
+    { code: 'IN_AGENDA_BOX', nameAr: 'في صندوق الأجندة', stateType: 'NORMAL', color: 'cyan', sortOrder: 15 },
+    { code: 'LINKED_TO_MEETING', nameAr: 'مرتبط باجتماع', stateType: 'NORMAL', color: 'processing', sortOrder: 16 },
+    { code: 'DEFERRED_IN_SESSION', nameAr: 'مؤجل في الجلسة', stateType: 'NORMAL', color: 'warning', sortOrder: 17 },
+    { code: 'DISCUSSED', nameAr: 'نوقش', stateType: 'NORMAL', color: 'success', sortOrder: 18 },
+    { code: 'DECISION_ISSUED', nameAr: 'صدر فيه قرار', stateType: 'FINAL', color: 'success', sortOrder: 19 },
+  ];
+
+  const ts: Record<string, string> = {};
+  for (const s of topicStates) {
+    const created = await prisma.workflowState.create({
+      data: { workflowId: topicWf.id, ...s },
+    });
+    ts[s.code] = created.id;
+  }
+
+  // تحولات المواضيع
+  const topicTransitions = [
+    // DRAFT → إرسال للاعتماد الهرمي
+    { from: 'DRAFT', to: 'PENDING_APPROVAL', actionCode: 'SUBMIT', actionNameAr: 'إرسال', permissionCode: 'SUBMIT_TOPIC', isHierarchical: true, buttonColor: 'primary', buttonIcon: 'SendOutlined', sortOrder: 1 },
+    // الاعتماد الهرمي: اعتماد (ينتقل للمستوى التالي أو HIERARCHY_APPROVED)
+    { from: 'PENDING_APPROVAL', to: 'PENDING_APPROVAL', actionCode: 'APPROVE_LEVEL', actionNameAr: 'اعتماد', permissionCode: 'APPROVE_TOPIC', isHierarchical: true, buttonColor: 'primary', buttonIcon: 'CheckOutlined', sortOrder: 1 },
+    // رفض في أي مستوى
+    { from: 'PENDING_APPROVAL', to: 'DRAFT', actionCode: 'REJECT_LEVEL', actionNameAr: 'رفض', permissionCode: 'REJECT_TOPIC', requiresReason: true, buttonColor: 'danger', buttonIcon: 'CloseOutlined', sortOrder: 3 },
+    // إعادة للمستوى السابق
+    { from: 'PENDING_APPROVAL', to: 'PENDING_APPROVAL', actionCode: 'RETURN_LEVEL', actionNameAr: 'إعادة للمستوى السابق', permissionCode: 'RETURN_TOPIC', requiresReason: true, isHierarchical: true, buttonColor: 'default', buttonIcon: 'RollbackOutlined', sortOrder: 2 },
+    // معتمد → إرسال للأمانة (تلقائي)
+    { from: 'HIERARCHY_APPROVED', to: 'SENT_TO_GS', actionCode: 'SEND_TO_GS', actionNameAr: 'إرسال للأمانة', permissionCode: 'SEND_TO_GS', autoTransition: true, sortOrder: 1 },
+    // وارد الأمانة (تلقائي)
+    { from: 'SENT_TO_GS', to: 'INBOX_GS', actionCode: 'AUTO_RECEIVE', actionNameAr: 'استلام تلقائي', permissionCode: 'ACCEPT_GS', autoTransition: true, sortOrder: 1 },
+    { from: 'INBOX_GS', to: 'GS_REVIEW', actionCode: 'AUTO_REVIEW', actionNameAr: 'مراجعة تلقائية', permissionCode: 'ACCEPT_GS', autoTransition: true, sortOrder: 1 },
+    // مراجعة الأمين العام
+    { from: 'GS_REVIEW', to: 'WITH_COUNCIL', actionCode: 'ACCEPT', actionNameAr: 'قبول وتحويل للمجلس', permissionCode: 'ACCEPT_GS', buttonColor: 'primary', buttonIcon: 'CheckOutlined', sortOrder: 1 },
+    { from: 'GS_REVIEW', to: 'RETURNED_DEPT', actionCode: 'RETURN_WRONG_COUNCIL', actionNameAr: 'إعادة (مجلس خاطئ)', permissionCode: 'RETURN_GS', requiresReason: true, buttonColor: 'default', buttonIcon: 'RollbackOutlined', sortOrder: 2 },
+    { from: 'GS_REVIEW', to: 'RETURNED_DEPT', actionCode: 'REJECT', actionNameAr: 'رفض', permissionCode: 'REJECT_GS', requiresReason: true, buttonColor: 'danger', buttonIcon: 'CloseOutlined', sortOrder: 3 },
+    // مُعاد للإدارة
+    { from: 'RETURNED_DEPT', to: 'SENT_TO_GS', actionCode: 'RESUBMIT', actionNameAr: 'إعادة الإرسال', permissionCode: 'RESUBMIT_TOPIC', buttonColor: 'primary', buttonIcon: 'SendOutlined', sortOrder: 1 },
+    { from: 'RETURNED_DEPT', to: 'CLOSED_BY_DEPT', actionCode: 'CLOSE_BY_DEPT', actionNameAr: 'إغلاق الموضوع', permissionCode: 'CLOSE_TOPIC', buttonColor: 'danger', buttonIcon: 'StopOutlined', sortOrder: 2 },
+    // المجلس → فحص
+    { from: 'WITH_COUNCIL', to: 'EXAM_IN_PROGRESS', actionCode: 'ASSIGN_EXAM', actionNameAr: 'إحالة للفحص', permissionCode: 'ASSIGN_EXAM', buttonColor: 'primary', buttonIcon: 'ExperimentOutlined', sortOrder: 1 },
+    { from: 'EXAM_IN_PROGRESS', to: 'EXAM_COMPLETE', actionCode: 'EXAM_PASS', actionNameAr: 'فحص مكتمل', permissionCode: 'PERFORM_EXAM', buttonColor: 'primary', buttonIcon: 'CheckOutlined', sortOrder: 1 },
+    { from: 'EXAM_IN_PROGRESS', to: 'EXAM_INCOMPLETE', actionCode: 'EXAM_FAIL', actionNameAr: 'فحص غير مكتمل', permissionCode: 'PERFORM_EXAM', requiresReason: true, buttonColor: 'danger', buttonIcon: 'CloseOutlined', sortOrder: 2 },
+    { from: 'EXAM_INCOMPLETE', to: 'EXAM_IN_PROGRESS', actionCode: 'REEXAM', actionNameAr: 'إعادة الفحص', permissionCode: 'ASSIGN_EXAM', buttonColor: 'primary', buttonIcon: 'ExperimentOutlined', sortOrder: 1 },
+    // فحص مكتمل → رئيس
+    { from: 'EXAM_COMPLETE', to: 'PRESIDENT_REVIEW', actionCode: 'SUBMIT_TO_PRESIDENT', actionNameAr: 'رفع لرئيس المجلس', permissionCode: 'SUBMIT_TO_PRESIDENT', buttonColor: 'primary', buttonIcon: 'SendOutlined', sortOrder: 1 },
+    // مراجعة الرئيس
+    { from: 'PRESIDENT_REVIEW', to: 'IN_AGENDA_BOX', actionCode: 'MARK_SUITABLE', actionNameAr: 'مناسب للإدراج', permissionCode: 'REVIEW_AS_PRESIDENT', buttonColor: 'primary', buttonIcon: 'CheckOutlined', sortOrder: 1 },
+    { from: 'PRESIDENT_REVIEW', to: 'RETURNED_COUNCIL', actionCode: 'RETURN_TO_COUNCIL', actionNameAr: 'إعادة للمجلس', permissionCode: 'REVIEW_AS_PRESIDENT', requiresReason: true, buttonColor: 'default', buttonIcon: 'RollbackOutlined', sortOrder: 2 },
+    // مُعاد من الرئيس
+    { from: 'RETURNED_COUNCIL', to: 'EXAM_IN_PROGRESS', actionCode: 'REEXAM', actionNameAr: 'إعادة الفحص', permissionCode: 'ASSIGN_EXAM', buttonColor: 'default', buttonIcon: 'ExperimentOutlined', sortOrder: 1 },
+    { from: 'RETURNED_COUNCIL', to: 'PRESIDENT_REVIEW', actionCode: 'SUBMIT_TO_PRESIDENT', actionNameAr: 'إعادة الرفع للرئيس', permissionCode: 'SUBMIT_TO_PRESIDENT', buttonColor: 'primary', buttonIcon: 'SendOutlined', sortOrder: 2 },
+    // الأجندة والاجتماع
+    { from: 'IN_AGENDA_BOX', to: 'LINKED_TO_MEETING', actionCode: 'LINK_TO_MEETING', actionNameAr: 'ربط باجتماع', permissionCode: 'LINK_TO_MEETING', buttonColor: 'primary', buttonIcon: 'ScheduleOutlined', sortOrder: 1 },
+    { from: 'LINKED_TO_MEETING', to: 'IN_AGENDA_BOX', actionCode: 'WITHDRAW', actionNameAr: 'سحب من الاجتماع', permissionCode: 'LINK_TO_MEETING', buttonColor: 'default', buttonIcon: 'UndoOutlined', sortOrder: 1 },
+    { from: 'LINKED_TO_MEETING', to: 'DEFERRED_IN_SESSION', actionCode: 'DEFER', actionNameAr: 'تأجيل في الجلسة', permissionCode: 'REVIEW_AS_PRESIDENT', buttonColor: 'warning', buttonIcon: 'PauseCircleOutlined', sortOrder: 2 },
+    { from: 'LINKED_TO_MEETING', to: 'DISCUSSED', actionCode: 'MARK_DISCUSSED', actionNameAr: 'تم النقاش', permissionCode: 'HOLD_MEETING', buttonColor: 'primary', buttonIcon: 'CheckOutlined', sortOrder: 3 },
+    { from: 'DEFERRED_IN_SESSION', to: 'IN_AGENDA_BOX', actionCode: 'AUTO_RETURN', actionNameAr: 'إعادة تلقائية', permissionCode: 'MANAGE_AGENDA', autoTransition: true, sortOrder: 1 },
+  ];
+
+  for (const t of topicTransitions) {
+    const fromId = ts[t.from];
+    const toId = ts[t.to];
+    if (!fromId || !toId) {
+      console.log(`⚠️ Skipping transition ${t.from} → ${t.to} (${t.actionCode}): fromId=${fromId}, toId=${toId}`);
+      continue;
+    }
+    const existing = await prisma.workflowTransition.findUnique({
+      where: { workflowId_fromStateId_actionCode: { workflowId: topicWf.id, fromStateId: fromId, actionCode: t.actionCode } },
+    });
+    if (!existing) {
+      await prisma.workflowTransition.create({
         data: {
-          userId: user.id,
-          roleId: roles[ur.roleCode].id,
-          councilId: ur.councilCode ? councils[ur.councilCode].id : null,
+          workflowId: topicWf.id,
+          fromStateId: fromId,
+          toStateId: toId,
+          actionCode: t.actionCode,
+          actionNameAr: t.actionNameAr,
+          permissionCode: t.permissionCode,
+          requiresReason: t.requiresReason || false,
+          isHierarchical: t.isHierarchical || false,
+          autoTransition: t.autoTransition || false,
+          buttonColor: t.buttonColor || 'default',
+          buttonIcon: t.buttonIcon || null,
+          sortOrder: t.sortOrder,
         },
       });
     }
-    return user;
   }
 
-  // ══════════════════════════════════════════════
-  // المستخدمون — مستخدم واحد على الأقل لكل دور
-  // ══════════════════════════════════════════════
+  // ── 4.2 مسار الاجتماعات ──
+  const meetingWf = await prisma.workflowDefinition.create({
+    data: { code: 'MEETING_WORKFLOW', nameAr: 'مسار الاجتماعات', entityType: 'Meeting' },
+  });
 
-  const users: Record<string, any> = {};
+  const meetingStates = [
+    { code: 'MEETING_DRAFT_SEC', nameAr: 'مسودة (أمين المجلس)', stateType: 'INITIAL', color: 'default', sortOrder: 1 },
+    { code: 'MEETING_GS_APPROVAL', nameAr: 'بانتظار اعتماد الأمين', stateType: 'NORMAL', color: 'warning', sortOrder: 2 },
+    { code: 'MEETING_BACK_SEC', nameAr: 'عاد لأمين المجلس', stateType: 'NORMAL', color: 'processing', sortOrder: 3 },
+    { code: 'MEETING_PRES_APPROVAL', nameAr: 'بانتظار اعتماد الرئيس', stateType: 'NORMAL', color: 'warning', sortOrder: 4 },
+    { code: 'MEETING_SCHEDULED', nameAr: 'مجدول', stateType: 'NORMAL', color: 'success', sortOrder: 5 },
+    { code: 'MEETING_HELD', nameAr: 'انعقد', stateType: 'NORMAL', color: 'success', sortOrder: 6 },
+    { code: 'MEETING_ADJOURNED', nameAr: 'مؤجل', stateType: 'NORMAL', color: 'warning', sortOrder: 7 },
+    { code: 'MEETING_CANCELLED', nameAr: 'ملغي', stateType: 'FINAL', color: 'error', sortOrder: 8 },
+  ];
+
+  const ms: Record<string, string> = {};
+  for (const s of meetingStates) {
+    const created = await prisma.workflowState.create({ data: { workflowId: meetingWf.id, ...s } });
+    ms[s.code] = created.id;
+  }
+
+  const meetingTransitions = [
+    { from: 'MEETING_DRAFT_SEC', to: 'MEETING_GS_APPROVAL', actionCode: 'SEND_TO_GS', actionNameAr: 'إرسال للأمين العام', permissionCode: 'CREATE_MEETING', buttonColor: 'primary', buttonIcon: 'SendOutlined' },
+    { from: 'MEETING_GS_APPROVAL', to: 'MEETING_BACK_SEC', actionCode: 'GS_APPROVE', actionNameAr: 'اعتماد', permissionCode: 'APPROVE_MEETING_GS', buttonColor: 'primary', buttonIcon: 'CheckOutlined' },
+    { from: 'MEETING_GS_APPROVAL', to: 'MEETING_DRAFT_SEC', actionCode: 'GS_RETURN', actionNameAr: 'إعادة', permissionCode: 'APPROVE_MEETING_GS', requiresReason: true, buttonColor: 'default', buttonIcon: 'RollbackOutlined' },
+    { from: 'MEETING_BACK_SEC', to: 'MEETING_PRES_APPROVAL', actionCode: 'SEND_TO_PRESIDENT', actionNameAr: 'إرسال للرئيس', permissionCode: 'CREATE_MEETING', buttonColor: 'primary', buttonIcon: 'SendOutlined' },
+    { from: 'MEETING_PRES_APPROVAL', to: 'MEETING_SCHEDULED', actionCode: 'PRESIDENT_APPROVE', actionNameAr: 'اعتماد', permissionCode: 'APPROVE_MEETING_PRES', buttonColor: 'primary', buttonIcon: 'CheckOutlined' },
+    { from: 'MEETING_PRES_APPROVAL', to: 'MEETING_BACK_SEC', actionCode: 'PRESIDENT_RETURN', actionNameAr: 'إعادة', permissionCode: 'APPROVE_MEETING_PRES', requiresReason: true, buttonColor: 'default', buttonIcon: 'RollbackOutlined' },
+    { from: 'MEETING_SCHEDULED', to: 'MEETING_HELD', actionCode: 'HOLD', actionNameAr: 'عقد الاجتماع', permissionCode: 'HOLD_MEETING', buttonColor: 'primary', buttonIcon: 'CheckCircleOutlined' },
+    { from: 'MEETING_SCHEDULED', to: 'MEETING_ADJOURNED', actionCode: 'ADJOURN', actionNameAr: 'تأجيل', permissionCode: 'HOLD_MEETING', buttonColor: 'warning', buttonIcon: 'PauseCircleOutlined' },
+    { from: 'MEETING_SCHEDULED', to: 'MEETING_CANCELLED', actionCode: 'CANCEL', actionNameAr: 'إلغاء', permissionCode: 'CANCEL_MEETING', requiresReason: true, buttonColor: 'danger', buttonIcon: 'CloseOutlined' },
+  ];
+
+  for (const t of meetingTransitions) {
+    await prisma.workflowTransition.create({
+      data: {
+        workflowId: meetingWf.id, fromStateId: ms[t.from], toStateId: ms[t.to],
+        actionCode: t.actionCode, actionNameAr: t.actionNameAr, permissionCode: t.permissionCode,
+        requiresReason: t.requiresReason || false, buttonColor: t.buttonColor || 'default',
+        buttonIcon: t.buttonIcon || null, sortOrder: 0,
+      },
+    });
+  }
+
+  // ── 4.3 مسار المحاضر ──
+  const minutesWf = await prisma.workflowDefinition.create({
+    data: { code: 'MINUTES_WORKFLOW', nameAr: 'مسار المحاضر', entityType: 'Minutes' },
+  });
+
+  const minutesStates = [
+    { code: 'MIN_DRAFT', nameAr: 'مسودة', stateType: 'INITIAL', color: 'default', sortOrder: 1 },
+    { code: 'MIN_GS_REVIEW', nameAr: 'مراجعة الأمين', stateType: 'NORMAL', color: 'warning', sortOrder: 2 },
+    { code: 'MIN_GS_RETURNED', nameAr: 'مُعاد من الأمين', stateType: 'NORMAL', color: 'error', sortOrder: 3 },
+    { code: 'MIN_MEMBERS_CONSULT', nameAr: 'استشارة الأعضاء', stateType: 'NORMAL', color: 'processing', sortOrder: 4 },
+    { code: 'MIN_TO_PRESIDENT', nameAr: 'لدى الرئيس للتوقيع', stateType: 'NORMAL', color: 'warning', sortOrder: 5 },
+    { code: 'MIN_SIGNED', nameAr: 'موقّع', stateType: 'FINAL', color: 'success', sortOrder: 6 },
+    { code: 'MIN_PRES_REJECT', nameAr: 'مرفوض من الرئيس', stateType: 'NORMAL', color: 'error', sortOrder: 7 },
+  ];
+
+  const mns: Record<string, string> = {};
+  for (const s of minutesStates) {
+    const created = await prisma.workflowState.create({ data: { workflowId: minutesWf.id, ...s } });
+    mns[s.code] = created.id;
+  }
+
+  const minutesTransitions = [
+    { from: 'MIN_DRAFT', to: 'MIN_GS_REVIEW', actionCode: 'SEND_TO_GS', actionNameAr: 'إرسال للأمين', permissionCode: 'CREATE_MINUTES', buttonColor: 'primary', buttonIcon: 'SendOutlined' },
+    { from: 'MIN_GS_REVIEW', to: 'MIN_MEMBERS_CONSULT', actionCode: 'GS_APPROVE', actionNameAr: 'اعتماد', permissionCode: 'REVIEW_MINUTES_GS', buttonColor: 'primary', buttonIcon: 'CheckOutlined' },
+    { from: 'MIN_GS_REVIEW', to: 'MIN_GS_RETURNED', actionCode: 'GS_RETURN', actionNameAr: 'إعادة', permissionCode: 'REVIEW_MINUTES_GS', requiresReason: true, buttonColor: 'default', buttonIcon: 'RollbackOutlined' },
+    { from: 'MIN_GS_RETURNED', to: 'MIN_GS_REVIEW', actionCode: 'RESUBMIT_TO_GS', actionNameAr: 'إعادة الإرسال', permissionCode: 'CREATE_MINUTES', buttonColor: 'primary', buttonIcon: 'SendOutlined' },
+    { from: 'MIN_MEMBERS_CONSULT', to: 'MIN_TO_PRESIDENT', actionCode: 'CLOSE_FEEDBACK', actionNameAr: 'إغلاق التصويت', permissionCode: 'CREATE_MINUTES', buttonColor: 'primary', buttonIcon: 'CheckOutlined' },
+    { from: 'MIN_TO_PRESIDENT', to: 'MIN_SIGNED', actionCode: 'SIGN', actionNameAr: 'توقيع', permissionCode: 'SIGN_MINUTES', buttonColor: 'primary', buttonIcon: 'EditOutlined' },
+    { from: 'MIN_TO_PRESIDENT', to: 'MIN_PRES_REJECT', actionCode: 'REJECT_SIGN', actionNameAr: 'رفض التوقيع', permissionCode: 'SIGN_MINUTES', requiresReason: true, buttonColor: 'danger', buttonIcon: 'CloseOutlined' },
+    { from: 'MIN_PRES_REJECT', to: 'MIN_GS_REVIEW', actionCode: 'GS_REWORK', actionNameAr: 'إعادة المعالجة', permissionCode: 'REVIEW_MINUTES_GS', buttonColor: 'primary', buttonIcon: 'RedoOutlined' },
+  ];
+
+  for (const t of minutesTransitions) {
+    await prisma.workflowTransition.create({
+      data: {
+        workflowId: minutesWf.id, fromStateId: mns[t.from], toStateId: mns[t.to],
+        actionCode: t.actionCode, actionNameAr: t.actionNameAr, permissionCode: t.permissionCode,
+        requiresReason: t.requiresReason || false, buttonColor: t.buttonColor || 'default',
+        buttonIcon: t.buttonIcon || null, sortOrder: 0,
+      },
+    });
+  }
+
+  // ═══════════════════════════════════════════════
+  // 5. الهيكل التنظيمي الشجري
+  // ═══════════════════════════════════════════════
+  console.log('🏢 الهيكل التنظيمي...');
+
+  // المنظمة الجذر
+  const rootOrg = await prisma.organizationUnit.create({
+    data: { name: 'المنظمة', code: 'ROOT', level: 0, unitType: 'ORGANIZATION', isApprovalAuthority: false, sortOrder: 0 },
+  });
+
+  // وكالة التقنية (3 مستويات حتى الاعتماد)
+  const techAgency = await prisma.organizationUnit.create({
+    data: { name: 'وكالة التقنية', code: 'TECH_AGENCY', parentId: rootOrg.id, level: 1, unitType: 'AGENCY', isApprovalAuthority: true, sortOrder: 1 },
+  });
+  const infraDept = await prisma.organizationUnit.create({
+    data: { name: 'إدارة البنية التحتية', code: 'INFRA_DEPT', parentId: techAgency.id, level: 2, unitType: 'DEPARTMENT', sortOrder: 1 },
+  });
+  const networkSec = await prisma.organizationUnit.create({
+    data: { name: 'قسم الشبكات', code: 'NETWORK_SEC', parentId: infraDept.id, level: 3, unitType: 'SECTION', sortOrder: 1 },
+  });
+  const serverSec = await prisma.organizationUnit.create({
+    data: { name: 'قسم السيرفرات', code: 'SERVER_SEC', parentId: infraDept.id, level: 3, unitType: 'SECTION', sortOrder: 2 },
+  });
+  const devDept = await prisma.organizationUnit.create({
+    data: { name: 'إدارة التطوير', code: 'DEV_DEPT', parentId: techAgency.id, level: 2, unitType: 'DEPARTMENT', sortOrder: 2 },
+  });
+  const progSec = await prisma.organizationUnit.create({
+    data: { name: 'قسم البرمجة', code: 'PROG_SEC', parentId: devDept.id, level: 3, unitType: 'SECTION', sortOrder: 1 },
+  });
+
+  // وكالة الموارد البشرية (مستوى واحد فقط)
+  const hrAgency = await prisma.organizationUnit.create({
+    data: { name: 'وكالة الموارد البشرية', code: 'HR_AGENCY', parentId: rootOrg.id, level: 1, unitType: 'AGENCY', isApprovalAuthority: true, sortOrder: 2 },
+  });
+  const recruitDept = await prisma.organizationUnit.create({
+    data: { name: 'إدارة التوظيف', code: 'RECRUIT_DEPT', parentId: hrAgency.id, level: 2, unitType: 'DEPARTMENT', sortOrder: 1 },
+  });
+
+  // مكتب الأمين العام
+  const gsOffice = await prisma.organizationUnit.create({
+    data: { name: 'مكتب الأمين العام', code: 'GS_OFFICE', parentId: rootOrg.id, level: 1, unitType: 'DEPARTMENT', sortOrder: 3 },
+  });
+
+  // ═══════════════════════════════════════════════
+  // 6. المجالس
+  // ═══════════════════════════════════════════════
+  console.log('🏛️  المجالس...');
+  const councils = {
+    tech: await prisma.council.create({ data: { name: 'مجلس التقنية', code: 'TECH' } }),
+    hiring: await prisma.council.create({ data: { name: 'مجلس التوظيف', code: 'HIRING' } }),
+    finance: await prisma.council.create({ data: { name: 'مجلس المالية', code: 'FINANCE' } }),
+  };
+
+  // ═══════════════════════════════════════════════
+  // 7. المستخدمون
+  // ═══════════════════════════════════════════════
+  console.log('👤 المستخدمون...');
 
   // مدير النظام
-  users.admin = await createUser('admin@company.sa', 'أحمد المدير', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'SYSTEM_ADMIN' },
-  ]);
+  const admin = await prisma.user.create({
+    data: { email: 'admin@company.sa', passwordHash: hash, displayName: 'مدير النظام', organizationId: rootOrg.id, maxClearanceId: sl.topSecret.id },
+  });
+  await prisma.userRole.create({ data: { userId: admin.id, roleId: roles['SYSTEM_ADMIN'] } });
 
   // الأمين العام
-  users.gs = await createUser('gs@company.sa', 'د. خالد الأمين', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'GENERAL_SECRETARY' },
-  ]);
-
-  // موظف مكتب الأمين العام
-  users.gsStaff = await createUser('gs.staff@company.sa', 'نورة العتيبي', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'GS_OFFICE_STAFF' },
-  ]);
-
-  // ─── إدارة تقنية المعلومات ───
-  users.itStaff = await createUser('it.staff@company.sa', 'محمد التقني', 'IT_DEPT', sl.internal.id, [
-    { roleCode: 'DEPT_STAFF' },
-  ]);
-  users.itManager = await createUser('it.manager@company.sa', 'سعود المدير', 'IT_DEPT', sl.confidential.id, [
-    { roleCode: 'DEPT_MANAGER' },
-  ]);
-
-  // ─── إدارة الموارد البشرية ───
-  users.hrStaff = await createUser('hr.staff@company.sa', 'فاطمة الموظفة', 'HR_DEPT', sl.internal.id, [
-    { roleCode: 'DEPT_STAFF' },
-  ]);
-  users.hrManager = await createUser('hr.manager@company.sa', 'عبدالله المدير', 'HR_DEPT', sl.confidential.id, [
-    { roleCode: 'DEPT_MANAGER' },
-  ]);
-
-  // ─── إدارة الشؤون المالية ───
-  users.finStaff = await createUser('fin.staff@company.sa', 'هند المالية', 'FIN_DEPT', sl.internal.id, [
-    { roleCode: 'DEPT_STAFF' },
-  ]);
-  users.finManager = await createUser('fin.manager@company.sa', 'ياسر المالي', 'FIN_DEPT', sl.confidential.id, [
-    { roleCode: 'DEPT_MANAGER' },
-  ]);
-
-  // ─── أمناء المجالس ───
-  users.techSec = await createUser('tech.sec@company.sa', 'فهد السالم', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'COUNCIL_SECRETARY', councilCode: 'TECH' },
-  ]);
-  users.hireSec = await createUser('hire.sec@company.sa', 'سارة المالكي', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'COUNCIL_SECRETARY', councilCode: 'HIRING' },
-  ]);
-  users.finSec = await createUser('fin.sec@company.sa', 'هدى الزهراني', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'COUNCIL_SECRETARY', councilCode: 'FINANCE' },
-  ]);
-
-  // ─── رؤساء المجالس ───
-  users.techPres = await createUser('tech.pres@company.sa', 'د. عمر الرئيس', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'COUNCIL_PRESIDENT', councilCode: 'TECH' },
-  ]);
-  users.hirePres = await createUser('hire.pres@company.sa', 'د. منى الرئيسة', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'COUNCIL_PRESIDENT', councilCode: 'HIRING' },
-  ]);
-  users.finPres = await createUser('fin.pres@company.sa', 'د. صالح الرئيس', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'COUNCIL_PRESIDENT', councilCode: 'FINANCE' },
-  ]);
-
-  // ─── مسؤولو الفحص ───
-  users.techExam = await createUser('tech.exam@company.sa', 'خالد الفاحص', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'EXAM_OFFICER', councilCode: 'TECH' },
-  ]);
-  users.hireExam = await createUser('hire.exam@company.sa', 'ريم الفاحصة', 'GS_OFFICE', sl.top.id, [
-    { roleCode: 'EXAM_OFFICER', councilCode: 'HIRING' },
-  ]);
-
-  // ─── أعضاء مجالس ───
-  users.techMember1 = await createUser('tech.m1@company.sa', 'ماجد العضو', 'GS_OFFICE', sl.confidential.id, [
-    { roleCode: 'COUNCIL_MEMBER', councilCode: 'TECH' },
-  ]);
-  users.techMember2 = await createUser('tech.m2@company.sa', 'لمى العضوة', 'GS_OFFICE', sl.confidential.id, [
-    { roleCode: 'COUNCIL_MEMBER', councilCode: 'TECH' },
-  ]);
-  users.hireMember1 = await createUser('hire.m1@company.sa', 'طارق العضو', 'GS_OFFICE', sl.confidential.id, [
-    { roleCode: 'COUNCIL_MEMBER', councilCode: 'HIRING' },
-  ]);
-
-  // ─── موظفو المجالس (دعم إداري) ───
-  users.techStaff = await createUser('tech.staff@company.sa', 'عبير المساعدة', 'GS_OFFICE', sl.internal.id, [
-    { roleCode: 'COUNCIL_STAFF', councilCode: 'TECH' },
-  ]);
-  users.hireStaff = await createUser('hire.staff@company.sa', 'مها المساعدة', 'GS_OFFICE', sl.internal.id, [
-    { roleCode: 'COUNCIL_STAFF', councilCode: 'HIRING' },
-  ]);
-
-  // ══════════════════════════════════════════════════════
-  // مسارات العمل — كل مسار يمثل حالة اختبار مختلفة
-  // ══════════════════════════════════════════════════════
-
-  let topicSeq = 0;
-  const allTopics: any[] = [];
-
-  async function createTopicAtStatus(
-    title: string,
-    councilCode: string,
-    orgCode: string,
-    createdBy: any,
-    targetStatus: string,
-    statusPath: { status: string; action: string; actor: any; reason?: string; returnType?: string }[],
-  ) {
-    topicSeq++;
-    const refNumber = `TOP-2026-${String(topicSeq).padStart(5, '0')}`;
-
-    const topic = await prisma.topic.create({
-      data: {
-        refNumber,
-        title,
-        status: targetStatus,
-        councilId: councils[councilCode].id,
-        secrecyLevelId: sl.internal.id,
-        requestingOrgId: orgs[orgCode].id,
-        createdById: createdBy.id,
-        currentVersion: statusPath.length + 1,
-        returnType: statusPath.find((s) => s.returnType)?.returnType || null,
-        agendaEnteredAt: targetStatus === 'IN_AGENDA_BOX' ? new Date() : null,
-      },
-    });
-
-    // Create status logs for the full path
-    let version = 1;
-    let prevStatus: string | null = null;
-    for (const step of statusPath) {
-      version++;
-      await prisma.topicStatusLog.create({
-        data: {
-          topicId: topic.id,
-          fromStatus: prevStatus || 'DRAFT',
-          toStatus: step.status,
-          action: step.action,
-          actorId: step.actor.id,
-          reason: step.reason,
-          version,
-          createdAt: new Date(Date.now() - (statusPath.length - version) * 3600000),
-        },
-      });
-      prevStatus = step.status;
-    }
-
-    allTopics.push(topic);
-    return topic;
-  }
-
-  // ──────────────────────────────────────────────────────
-  // المسار 1: DRAFT — ينتظر إجراء الموظف (SUBMIT_TO_MANAGER)
-  // الدور: DEPT_STAFF — it.staff@company.sa
-  // ──────────────────────────────────────────────────────
-  await createTopicAtStatus(
-    'مسودة: طلب شراء أجهزة حاسب جديدة',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'DRAFT', [],
-  );
-  await createTopicAtStatus(
-    'مسودة: تحديث نظام البريد الإلكتروني',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'DRAFT', [],
-  );
-
-  // ──────────────────────────────────────────────────────
-  // المسار 2: PENDING_DEPT_MGR — ينتظر إجراء المدير (APPROVE / RETURN_TO_DRAFT)
-  // الدور: DEPT_MANAGER — it.manager@company.sa
-  // ──────────────────────────────────────────────────────
-  await createTopicAtStatus(
-    'بانتظار الاعتماد: مشروع التحول الرقمي',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'PENDING_DEPT_MGR',
-    [{ status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff }],
-  );
-  await createTopicAtStatus(
-    'بانتظار الاعتماد: تجديد تراخيص البرمجيات',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'PENDING_DEPT_MGR',
-    [{ status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff }],
-  );
-  // From HR dept too
-  await createTopicAtStatus(
-    'بانتظار الاعتماد: خطة التدريب السنوية',
-    'HIRING', 'HR_DEPT', users.hrStaff,
-    'PENDING_DEPT_MGR',
-    [{ status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.hrStaff }],
-  );
-
-  // ──────────────────────────────────────────────────────
-  // المسار 3: APPROVED — ينتظر إجراء المدير (SEND_TO_GS / REVOKE_APPROVAL)
-  // الدور: DEPT_MANAGER
-  // ──────────────────────────────────────────────────────
-  await createTopicAtStatus(
-    'معتمد: طلب توظيف مطورين',
-    'HIRING', 'IT_DEPT', users.itStaff,
-    'APPROVED',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-    ],
-  );
-  await createTopicAtStatus(
-    'معتمد: ميزانية مشروع الشبكات',
-    'FINANCE', 'IT_DEPT', users.itStaff,
-    'APPROVED',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-    ],
-  );
-
-  // ──────────────────────────────────────────────────────
-  // المسار 4: GS_REVIEW — ينتظر إجراء الأمين العام (ACCEPT / SUSPEND / REJECT)
-  // الدور: GENERAL_SECRETARY — gs@company.sa
-  // ──────────────────────────────────────────────────────
-  for (let i = 0; i < 5; i++) {
-    const titles = [
-      'مراجعة الأمين: اعتماد هيكل تنظيمي جديد',
-      'مراجعة الأمين: سياسة الأمن السيبراني',
-      'مراجعة الأمين: تحديث نظام ERP',
-      'مراجعة الأمين: عقد صيانة المباني',
-      'مراجعة الأمين: خطة التوسع الإقليمي',
-    ];
-    const councilCodes = ['TECH', 'HIRING', 'FINANCE', 'TECH', 'HIRING'];
-    await createTopicAtStatus(
-      titles[i], councilCodes[i], 'IT_DEPT', users.itStaff,
-      'GS_REVIEW',
-      [
-        { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-        { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-        { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-        { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      ],
-    );
-  }
-
-  // ──────────────────────────────────────────────────────
-  // المسار 5: SUSPENDED — ينتظر إجراء الأمين العام (RESUME)
-  // الدور: GENERAL_SECRETARY
-  // ──────────────────────────────────────────────────────
-  await createTopicAtStatus(
-    'معلّق: مراجعة عقود التأمين',
-    'FINANCE', 'HR_DEPT', users.hrStaff,
-    'SUSPENDED',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.hrStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.hrManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.hrManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'SUSPENDED', action: 'SUSPEND', actor: users.gs, reason: 'بانتظار مستندات إضافية' },
-    ],
-  );
-  await createTopicAtStatus(
-    'معلّق: طلب تمويل بحث وتطوير',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'SUSPENDED',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'SUSPENDED', action: 'SUSPEND', actor: users.gs, reason: 'يتطلب دراسة مالية إضافية' },
-    ],
-  );
-
-  // ──────────────────────────────────────────────────────
-  // المسار 6: RETURNED_DEPT — ينتظر إجراء المدير (RESUBMIT / CLOSE_BY_DEPT)
-  // الدور: DEPT_MANAGER
-  // ──────────────────────────────────────────────────────
-  await createTopicAtStatus(
-    'مُعاد: طلب شراء نظام محاسبي',
-    'FINANCE', 'FIN_DEPT', users.finStaff,
-    'RETURNED_DEPT',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.finStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.finManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.finManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'RETURNED_DEPT', action: 'REJECT', actor: users.gs, reason: 'يحتاج مواصفات تفصيلية' },
-    ],
-  );
-  await createTopicAtStatus(
-    'مُعاد: طلب إنشاء وحدة ابتكار',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'RETURNED_DEPT',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'RETURNED_DEPT', action: 'RETURN_WRONG_COUNCIL', actor: users.gs, reason: 'يجب تحويله لمجلس التوظيف' },
-    ],
-  );
-
-  // ──────────────────────────────────────────────────────
-  // المسار 7: WITH_COUNCIL — ينتظر إجراء أمين المجلس (ASSIGN_EXAM)
-  // الدور: COUNCIL_SECRETARY — tech.sec@company.sa
-  // ──────────────────────────────────────────────────────
-  for (const [title, council] of [
-    ['لدى المجلس: اعتماد ميزانية التحول الرقمي', 'TECH'],
-    ['لدى المجلس: تطوير بوابة الخدمات الإلكترونية', 'TECH'],
-    ['لدى المجلس: خطة التوظيف السنوية', 'HIRING'],
-    ['لدى المجلس: مراجعة الميزانية التشغيلية', 'FINANCE'],
-  ] as const) {
-    await createTopicAtStatus(
-      title, council, 'IT_DEPT', users.itStaff,
-      'WITH_COUNCIL',
-      [
-        { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-        { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-        { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-        { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-        { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      ],
-    );
-  }
-
-  // ──────────────────────────────────────────────────────
-  // المسار 8: EXAM_IN_PROGRESS — ينتظر إجراء الفاحص (EXAM_PASS / EXAM_FAIL)
-  // الدور: EXAM_OFFICER — tech.exam@company.sa
-  // ──────────────────────────────────────────────────────
-  const examTopics: any[] = [];
-  for (const [title, council, sec, exam] of [
-    ['قيد الفحص: سياسة العمل عن بُعد', 'TECH', users.techSec, users.techExam],
-    ['قيد الفحص: نظام تقييم الأداء', 'TECH', users.techSec, users.techExam],
-    ['قيد الفحص: عقود التوظيف الجديدة', 'HIRING', users.hireSec, users.hireExam],
-  ] as const) {
-    const t = await createTopicAtStatus(
-      title as string, council as string, 'IT_DEPT', users.itStaff,
-      'EXAM_IN_PROGRESS',
-      [
-        { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-        { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-        { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-        { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-        { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-        { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: sec },
-      ],
-    );
-    // Create examination record
-    await prisma.examination.create({
-      data: {
-        topicId: t.id,
-        examinerId: (exam as any).id,
-        assignedById: (sec as any).id,
-        result: 'INCOMPLETE',
-        version: t.currentVersion,
-      },
-    });
-    examTopics.push(t);
-  }
-
-  // ──────────────────────────────────────────────────────
-  // المسار 9: EXAM_INCOMPLETE — ينتظر إجراء أمين المجلس (REEXAM)
-  // الدور: COUNCIL_SECRETARY
-  // ──────────────────────────────────────────────────────
-  const examIncomplete = await createTopicAtStatus(
-    'فحص غير مكتمل: تحديث البنية التحتية للشبكات',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'EXAM_INCOMPLETE',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: users.techSec },
-      { status: 'EXAM_INCOMPLETE', action: 'EXAM_FAIL', actor: users.techExam, reason: 'المستندات الفنية ناقصة' },
-    ],
-  );
-  await prisma.examination.create({
-    data: {
-      topicId: examIncomplete.id,
-      examinerId: users.techExam.id,
-      assignedById: users.techSec.id,
-      result: 'INCOMPLETE',
-      reasons: 'المستندات الفنية ناقصة',
-      version: examIncomplete.currentVersion,
-    },
+  const gs = await prisma.user.create({
+    data: { email: 'gs@company.sa', passwordHash: hash, displayName: 'د. خالد الأمين', organizationId: gsOffice.id, maxClearanceId: sl.topSecret.id },
   });
+  await prisma.userRole.create({ data: { userId: gs.id, roleId: roles['GENERAL_SECRETARY'] } });
 
-  // ──────────────────────────────────────────────────────
-  // المسار 10: EXAM_COMPLETE — ينتظر إجراء أمين المجلس (SUBMIT_TO_PRESIDENT)
-  // الدور: COUNCIL_SECRETARY
-  // ──────────────────────────────────────────────────────
-  const examComplete = await createTopicAtStatus(
-    'فحص مكتمل: اعتماد خطة الطوارئ',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'EXAM_COMPLETE',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: users.techSec },
-      { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: users.techExam },
-    ],
-  );
-  await prisma.examination.create({
-    data: {
-      topicId: examComplete.id,
-      examinerId: users.techExam.id,
-      assignedById: users.techSec.id,
-      result: 'COMPLETE',
-      version: examComplete.currentVersion,
-    },
+  // موظف مكتب الأمين
+  const gsStaff = await prisma.user.create({
+    data: { email: 'gs.staff@company.sa', passwordHash: hash, displayName: 'فهد العمري', organizationId: gsOffice.id, maxClearanceId: sl.topSecret.id },
   });
-  // Another one for HIRING
-  const examComplete2 = await createTopicAtStatus(
-    'فحص مكتمل: سياسة الاستقطاب',
-    'HIRING', 'HR_DEPT', users.hrStaff,
-    'EXAM_COMPLETE',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.hrStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.hrManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.hrManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: users.hireSec },
-      { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: users.hireExam },
-    ],
-  );
-  await prisma.examination.create({
-    data: {
-      topicId: examComplete2.id,
-      examinerId: users.hireExam.id,
-      assignedById: users.hireSec.id,
-      result: 'COMPLETE',
-      version: examComplete2.currentVersion,
-    },
+  await prisma.userRole.create({ data: { userId: gsStaff.id, roleId: roles['GS_OFFICE_STAFF'] } });
+
+  // ── وكالة التقنية ──
+  // وكيل التقنية (مسؤول الوكالة - نقطة الاعتماد النهائي)
+  const techVP = await prisma.user.create({
+    data: { email: 'tech.vp@company.sa', passwordHash: hash, displayName: 'م. سعود التقني', organizationId: techAgency.id, maxClearanceId: sl.topSecret.id },
   });
+  await prisma.userRole.create({ data: { userId: techVP.id, roleId: roles['ORG_MANAGER'] } });
+  await prisma.organizationUnit.update({ where: { id: techAgency.id }, data: { managerId: techVP.id } });
 
-  // ──────────────────────────────────────────────────────
-  // المسار 11: PRESIDENT_REVIEW — ينتظر إجراء الرئيس (MARK_SUITABLE / RETURN_TO_COUNCIL)
-  // الدور: COUNCIL_PRESIDENT — tech.pres@company.sa
-  // ──────────────────────────────────────────────────────
-  for (const [title, council, sec, exam, pres] of [
-    ['مراجعة الرئيس: مشروع البنية التحتية السحابية', 'TECH', users.techSec, users.techExam, users.techPres],
-    ['مراجعة الرئيس: خطة تطوير الكوادر', 'HIRING', users.hireSec, users.hireExam, users.hirePres],
-    ['مراجعة الرئيس: نظام المشتريات الإلكتروني', 'TECH', users.techSec, users.techExam, users.techPres],
-  ] as const) {
-    const t = await createTopicAtStatus(
-      title as string, council as string, 'IT_DEPT', users.itStaff,
-      'PRESIDENT_REVIEW',
-      [
-        { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-        { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-        { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-        { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-        { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-        { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: sec },
-        { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: exam },
-        { status: 'PRESIDENT_REVIEW', action: 'SUBMIT_TO_PRESIDENT', actor: sec },
-      ],
-    );
-    await prisma.examination.create({
-      data: {
-        topicId: t.id,
-        examinerId: (exam as any).id,
-        assignedById: (sec as any).id,
-        result: 'COMPLETE',
-        version: t.currentVersion - 1,
-      },
-    });
-  }
-
-  // ──────────────────────────────────────────────────────
-  // المسار 12: RETURNED_COUNCIL — ينتظر إجراء أمين المجلس (REEXAM أو SUBMIT_TO_PRESIDENT)
-  // الدور: COUNCIL_SECRETARY
-  // ──────────────────────────────────────────────────────
-  // 12a: FULL_REEXAM
-  const retCouncil1 = await createTopicAtStatus(
-    'مُعاد للمجلس (إعادة فحص): تطوير منصة التعلم',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'RETURNED_COUNCIL',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: users.techSec },
-      { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: users.techExam },
-      { status: 'PRESIDENT_REVIEW', action: 'SUBMIT_TO_PRESIDENT', actor: users.techSec },
-      { status: 'RETURNED_COUNCIL', action: 'RETURN_TO_COUNCIL', actor: users.techPres, reason: 'يحتاج فحص فني أعمق', returnType: 'FULL_REEXAM' },
-    ],
-  );
-
-  // 12b: PATH_CORRECTION
-  const retCouncil2 = await createTopicAtStatus(
-    'مُعاد للمجلس (تصحيح): سياسة أمن المعلومات',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'RETURNED_COUNCIL',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: users.techSec },
-      { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: users.techExam },
-      { status: 'PRESIDENT_REVIEW', action: 'SUBMIT_TO_PRESIDENT', actor: users.techSec },
-      { status: 'RETURNED_COUNCIL', action: 'RETURN_TO_COUNCIL', actor: users.techPres, reason: 'تصحيح بسيط في المرفقات', returnType: 'PATH_CORRECTION' },
-    ],
-  );
-
-  // ──────────────────────────────────────────────────────
-  // المسار 13: IN_AGENDA_BOX — ينتظر ربط باجتماع
-  // الدور: COUNCIL_SECRETARY
-  // ──────────────────────────────────────────────────────
-  const agendaTopics: any[] = [];
-  for (const [title, council] of [
-    ['في الأجندة: اعتماد معايير الجودة', 'TECH'],
-    ['في الأجندة: خطة التعاقب الوظيفي', 'TECH'],
-    ['في الأجندة: نظام الحوافز الجديد', 'HIRING'],
-    ['في الأجندة: ميزانية المشاريع الرأسمالية', 'FINANCE'],
-  ] as const) {
-    const sec = council === 'TECH' ? users.techSec : council === 'HIRING' ? users.hireSec : users.finSec;
-    const exam = council === 'TECH' ? users.techExam : council === 'HIRING' ? users.hireExam : users.techExam;
-    const pres = council === 'TECH' ? users.techPres : council === 'HIRING' ? users.hirePres : users.finPres;
-    const t = await createTopicAtStatus(
-      title as string, council as string, 'IT_DEPT', users.itStaff,
-      'IN_AGENDA_BOX',
-      [
-        { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-        { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-        { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-        { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-        { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-        { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: sec },
-        { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: exam },
-        { status: 'PRESIDENT_REVIEW', action: 'SUBMIT_TO_PRESIDENT', actor: sec },
-        { status: 'IN_AGENDA_BOX', action: 'MARK_SUITABLE', actor: pres },
-      ],
-    );
-    agendaTopics.push(t);
-  }
-
-  // ──────────────────────────────────────────────────────
-  // المسار 14: LINKED_TO_MEETING — ينتظر إجراء (WITHDRAW / DEFER)
-  // ──────────────────────────────────────────────────────
-  const linkedTopic = await createTopicAtStatus(
-    'مرتبط باجتماع: استراتيجية الذكاء الاصطناعي',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'LINKED_TO_MEETING',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: users.techSec },
-      { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: users.techExam },
-      { status: 'PRESIDENT_REVIEW', action: 'SUBMIT_TO_PRESIDENT', actor: users.techSec },
-      { status: 'IN_AGENDA_BOX', action: 'MARK_SUITABLE', actor: users.techPres },
-      { status: 'LINKED_TO_MEETING', action: 'LINK_TO_MEETING', actor: users.techSec },
-    ],
-  );
-
-  // ══════════════════════════════════════════════════════
-  // الاجتماعات — بحالات مختلفة
-  // ══════════════════════════════════════════════════════
-
-  // Meeting in DRAFT state
-  const mtgDraft = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-TECH-2026-001',
-      councilId: councils.TECH.id,
-      title: 'اجتماع مجلس التقنية الدوري (مسودة)',
-      status: 'MEETING_DRAFT_SEC',
-      scheduledAt: new Date('2026-05-01T10:00:00'),
-      location: 'قاعة الاجتماعات الرئيسية',
-      createdById: users.techSec.id,
-    },
+  // مدير البنية التحتية
+  const infraMgr = await prisma.user.create({
+    data: { email: 'infra.mgr@company.sa', passwordHash: hash, displayName: 'أحمد البنية', organizationId: infraDept.id, maxClearanceId: sl.confidential.id },
   });
+  await prisma.userRole.create({ data: { userId: infraMgr.id, roleId: roles['ORG_MANAGER'] } });
+  await prisma.organizationUnit.update({ where: { id: infraDept.id }, data: { managerId: infraMgr.id } });
 
-  // Meeting awaiting GS approval
-  const mtgGS = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-TECH-2026-002',
-      councilId: councils.TECH.id,
-      title: 'اجتماع مجلس التقنية الاستثنائي (بانتظار الأمين)',
-      status: 'MEETING_GS_APPROVAL',
-      scheduledAt: new Date('2026-05-05T14:00:00'),
-      location: 'قاعة VIP',
-      createdById: users.techSec.id,
-    },
+  // رئيس قسم الشبكات
+  const netMgr = await prisma.user.create({
+    data: { email: 'net.mgr@company.sa', passwordHash: hash, displayName: 'عبدالله الشبكي', organizationId: networkSec.id, maxClearanceId: sl.internal.id },
   });
+  await prisma.userRole.create({ data: { userId: netMgr.id, roleId: roles['ORG_MANAGER'] } });
+  await prisma.organizationUnit.update({ where: { id: networkSec.id }, data: { managerId: netMgr.id } });
 
-  // Meeting back to secretary after GS approval
-  const mtgBackSec = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-HIRING-2026-001',
-      councilId: councils.HIRING.id,
-      title: 'اجتماع مجلس التوظيف (بانتظار الرئيس)',
-      status: 'MEETING_BACK_SEC',
-      scheduledAt: new Date('2026-05-10T09:00:00'),
-      location: 'قاعة الاجتماعات B',
-      createdById: users.hireSec.id,
-    },
+  // موظف في قسم الشبكات
+  const netEmployee = await prisma.user.create({
+    data: { email: 'net.emp@company.sa', passwordHash: hash, displayName: 'محمد الشبكي', organizationId: networkSec.id, maxClearanceId: sl.internal.id },
   });
+  await prisma.userRole.create({ data: { userId: netEmployee.id, roleId: roles['EMPLOYEE'] } });
 
-  // Meeting awaiting president approval
-  const mtgPresApproval = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-TECH-2026-003',
-      councilId: councils.TECH.id,
-      title: 'اجتماع مجلس التقنية الثالث (بانتظار رئيس المجلس)',
-      status: 'MEETING_PRES_APPROVAL',
-      scheduledAt: new Date('2026-05-15T10:00:00'),
-      location: 'قاعة الاجتماعات الكبرى',
-      createdById: users.techSec.id,
-    },
+  // مدير التطوير
+  const devMgr = await prisma.user.create({
+    data: { email: 'dev.mgr@company.sa', passwordHash: hash, displayName: 'خالد المطور', organizationId: devDept.id, maxClearanceId: sl.confidential.id },
   });
+  await prisma.userRole.create({ data: { userId: devMgr.id, roleId: roles['ORG_MANAGER'] } });
+  await prisma.organizationUnit.update({ where: { id: devDept.id }, data: { managerId: devMgr.id } });
 
-  // Scheduled meeting (ready to hold)
-  const mtgScheduled = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-TECH-2026-004',
-      councilId: councils.TECH.id,
-      title: 'اجتماع مجلس التقنية المجدول',
-      status: 'MEETING_SCHEDULED',
-      scheduledAt: new Date('2026-04-20T10:00:00'),
-      location: 'قاعة المجلس',
-      createdById: users.techSec.id,
-    },
+  // موظف في قسم البرمجة
+  const progEmployee = await prisma.user.create({
+    data: { email: 'prog.emp@company.sa', passwordHash: hash, displayName: 'سارة المبرمجة', organizationId: progSec.id, maxClearanceId: sl.internal.id },
   });
+  await prisma.userRole.create({ data: { userId: progEmployee.id, roleId: roles['EMPLOYEE'] } });
 
-  // Link the LINKED_TO_MEETING topic to the scheduled meeting
-  await prisma.meetingTopicLink.create({
-    data: {
-      meetingId: mtgScheduled.id,
-      topicId: linkedTopic.id,
-      orderIndex: 0,
-    },
+  // ── وكالة الموارد البشرية ──
+  const hrVP = await prisma.user.create({
+    data: { email: 'hr.vp@company.sa', passwordHash: hash, displayName: 'نورة الموارد', organizationId: hrAgency.id, maxClearanceId: sl.confidential.id },
   });
+  await prisma.userRole.create({ data: { userId: hrVP.id, roleId: roles['ORG_MANAGER'] } });
+  await prisma.organizationUnit.update({ where: { id: hrAgency.id }, data: { managerId: hrVP.id } });
 
-  // Held meeting (completed, ready for minutes)
-  const mtgHeld = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-TECH-2026-005',
-      councilId: councils.TECH.id,
-      title: 'اجتماع مجلس التقنية المنعقد',
-      status: 'MEETING_HELD',
-      scheduledAt: new Date('2026-03-15T10:00:00'),
-      heldAt: new Date('2026-03-15T10:30:00'),
-      location: 'قاعة المجلس',
-      createdById: users.techSec.id,
-    },
+  const recruitMgr = await prisma.user.create({
+    data: { email: 'recruit.mgr@company.sa', passwordHash: hash, displayName: 'هند التوظيف', organizationId: recruitDept.id, maxClearanceId: sl.internal.id },
   });
+  await prisma.userRole.create({ data: { userId: recruitMgr.id, roleId: roles['ORG_MANAGER'] } });
+  await prisma.organizationUnit.update({ where: { id: recruitDept.id }, data: { managerId: recruitMgr.id } });
 
-  // Another held meeting for HIRING
-  const mtgHeldHire = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-HIRING-2026-002',
-      councilId: councils.HIRING.id,
-      title: 'اجتماع مجلس التوظيف المنعقد',
-      status: 'MEETING_HELD',
-      scheduledAt: new Date('2026-03-20T09:00:00'),
-      heldAt: new Date('2026-03-20T09:15:00'),
-      location: 'قاعة B',
-      createdById: users.hireSec.id,
-    },
+  const hrEmployee = await prisma.user.create({
+    data: { email: 'hr.emp@company.sa', passwordHash: hash, displayName: 'ريم التوظيف', organizationId: recruitDept.id, maxClearanceId: sl.internal.id },
   });
+  await prisma.userRole.create({ data: { userId: hrEmployee.id, roleId: roles['EMPLOYEE'] } });
 
-  // ══════════════════════════════════════════════════════
-  // المحاضر — بحالات مختلفة
-  // ══════════════════════════════════════════════════════
-
-  // Minutes in DRAFT
-  const minDraft = await prisma.minutes.create({
-    data: {
-      meetingId: mtgHeld.id,
-      status: 'MIN_DRAFT',
-      body: 'محضر اجتماع مجلس التقنية المنعقد بتاريخ 15/03/2026\n\nالحاضرون: ...\n\nجدول الأعمال:\n1. مناقشة مشروع البنية التحتية\n2. اعتماد ميزانية التطوير\n\nالقرارات: ...',
-    },
+  // ── أدوار المجالس ──
+  // أمين مجلس التقنية
+  const techSecretary = await prisma.user.create({
+    data: { email: 'tech.sec@company.sa', passwordHash: hash, displayName: 'عمر أمين التقنية', organizationId: rootOrg.id, maxClearanceId: sl.topSecret.id },
   });
+  await prisma.userRole.create({ data: { userId: techSecretary.id, roleId: roles['COUNCIL_SECRETARY'], councilId: councils.tech.id } });
 
-  // Minutes in GS_REVIEW
-  const minGSReview = await prisma.minutes.create({
-    data: {
-      meetingId: mtgHeldHire.id,
-      status: 'MIN_GS_REVIEW',
-      body: 'محضر اجتماع مجلس التوظيف المنعقد بتاريخ 20/03/2026\n\nالحاضرون: ...\n\nجدول الأعمال:\n1. مراجعة خطة التوظيف\n2. اعتماد سياسة الاستقطاب\n\nالقرارات: ...',
-    },
+  // رئيس مجلس التقنية
+  const techPresident = await prisma.user.create({
+    data: { email: 'tech.pres@company.sa', passwordHash: hash, displayName: 'د. فيصل رئيس التقنية', organizationId: rootOrg.id, maxClearanceId: sl.topSecret.id },
   });
+  await prisma.userRole.create({ data: { userId: techPresident.id, roleId: roles['COUNCIL_PRESIDENT'], councilId: councils.tech.id } });
 
-  // Create a fully-signed minutes for decision creation
-  const mtgForDecision = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-TECH-2026-006',
-      councilId: councils.TECH.id,
-      title: 'اجتماع مجلس التقنية — محضر موقّع',
-      status: 'MEETING_HELD',
-      scheduledAt: new Date('2026-02-15T10:00:00'),
-      heldAt: new Date('2026-02-15T10:30:00'),
-      location: 'قاعة المجلس',
-      createdById: users.techSec.id,
-    },
+  // أعضاء مجلس التقنية
+  const techMember1 = await prisma.user.create({
+    data: { email: 'tech.m1@company.sa', passwordHash: hash, displayName: 'سلطان عضو التقنية', organizationId: rootOrg.id, maxClearanceId: sl.confidential.id },
   });
+  await prisma.userRole.create({ data: { userId: techMember1.id, roleId: roles['COUNCIL_MEMBER'], councilId: councils.tech.id } });
 
-  const minSigned = await prisma.minutes.create({
-    data: {
-      meetingId: mtgForDecision.id,
-      status: 'MIN_SIGNED',
-      body: 'محضر موقّع — اجتماع فبراير\n\nتم مناقشة واعتماد المواضيع التالية...',
-      signedAt: new Date('2026-02-20T14:00:00'),
-      signedById: users.techPres.id,
-    },
+  // فاحص مجلس التقنية
+  const techExaminer = await prisma.user.create({
+    data: { email: 'tech.exam@company.sa', passwordHash: hash, displayName: 'ماجد فاحص التقنية', organizationId: rootOrg.id, maxClearanceId: sl.topSecret.id },
   });
+  await prisma.userRole.create({ data: { userId: techExaminer.id, roleId: roles['EXAM_OFFICER'], councilId: councils.tech.id } });
 
-  // Minutes awaiting member feedback
-  const mtgForFeedback = await prisma.meeting.create({
-    data: {
-      refNumber: 'MTG-TECH-2026-007',
-      councilId: councils.TECH.id,
-      title: 'اجتماع مجلس التقنية — بانتظار مرئيات الأعضاء',
-      status: 'MEETING_HELD',
-      scheduledAt: new Date('2026-03-01T10:00:00'),
-      heldAt: new Date('2026-03-01T10:15:00'),
-      location: 'قاعة المجلس',
-      createdById: users.techSec.id,
-    },
-  });
-
-  const minConsult = await prisma.minutes.create({
-    data: {
-      meetingId: mtgForFeedback.id,
-      status: 'MIN_MEMBERS_CONSULT',
-      body: 'محضر بانتظار مرئيات الأعضاء\n\nيرجى من أعضاء المجلس إبداء مرئياتهم...',
-      feedbackDeadline: new Date('2026-04-15T23:59:59'),
-    },
-  });
-
-  // ══════════════════════════════════════════════════════
-  // القرارات
-  // ══════════════════════════════════════════════════════
-
-  // Create a topic that reached DECISION_ISSUED
-  const decisionTopic = await createTopicAtStatus(
-    'قرار صادر: اعتماد سياسة الحوكمة الرقمية',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'DECISION_ISSUED',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'GS_REVIEW', action: 'AUTO', actor: users.gs },
-      { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      { status: 'EXAM_IN_PROGRESS', action: 'ASSIGN_EXAM', actor: users.techSec },
-      { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: users.techExam },
-      { status: 'PRESIDENT_REVIEW', action: 'SUBMIT_TO_PRESIDENT', actor: users.techSec },
-      { status: 'IN_AGENDA_BOX', action: 'MARK_SUITABLE', actor: users.techPres },
-      { status: 'DISCUSSED', action: 'MARK_DISCUSSED', actor: users.techSec },
-      { status: 'DECISION_ISSUED', action: 'ISSUE_DECISION', actor: users.techPres },
-    ],
-  );
-
-  // Decision in DEC_DRAFT (can be issued by president)
-  await prisma.decision.create({
-    data: {
-      refNumber: 'DEC-TECH-2026-001',
-      topicId: decisionTopic.id,
-      minutesId: minSigned.id,
-      status: 'DEC_DRAFT',
-      summary: 'اعتماد سياسة الحوكمة الرقمية الشاملة لجميع الأنظمة',
-    },
-  });
-
-  // Issued decision
-  const decisionTopic2 = await createTopicAtStatus(
-    'قرار صادر: ميزانية الأمن السيبراني',
-    'TECH', 'IT_DEPT', users.itStaff,
-    'DECISION_ISSUED',
-    [
-      { status: 'PENDING_DEPT_MGR', action: 'SUBMIT_TO_MANAGER', actor: users.itStaff },
-      { status: 'APPROVED', action: 'APPROVE', actor: users.itManager },
-      { status: 'INBOX_GS', action: 'SEND_TO_GS', actor: users.itManager },
-      { status: 'WITH_COUNCIL', action: 'ACCEPT', actor: users.gs },
-      { status: 'EXAM_COMPLETE', action: 'EXAM_PASS', actor: users.techExam },
-      { status: 'IN_AGENDA_BOX', action: 'MARK_SUITABLE', actor: users.techPres },
-      { status: 'DECISION_ISSUED', action: 'ISSUE_DECISION', actor: users.techPres },
-    ],
-  );
-
-  await prisma.decision.create({
-    data: {
-      refNumber: 'DEC-TECH-2026-002',
-      topicId: decisionTopic2.id,
-      minutesId: minSigned.id,
-      status: 'DEC_ISSUED',
-      summary: 'تخصيص ميزانية 5 مليون ريال للأمن السيبراني',
-      issuedAt: new Date('2026-02-25T10:00:00'),
-      issuedById: users.techPres.id,
-    },
-  });
-
-  // ══════════════════════════════════════════════════════
-  // الإشعارات
-  // ══════════════════════════════════════════════════════
-  const notifRecipients = [users.itManager, users.hrManager, users.finManager, users.techSec, users.gs];
-  for (let i = 0; i < notifRecipients.length; i++) {
-    await prisma.notification.create({
-      data: {
-        type: 'WORKFLOW_ALERT',
-        status: 'NOTIF_PENDING',
-        recipientId: notifRecipients[i].id,
-        title: `إشعار اختبار ${i + 1}`,
-        body: 'هذا إشعار تجريبي لاختبار النظام',
-      },
-    });
-  }
-
-  // ══════════════════════════════════════════════════════
-  // التفويضات
-  // ══════════════════════════════════════════════════════
-  await prisma.delegation.create({
-    data: {
-      state: 'DELEGATION_ACTIVE',
-      fromUserId: users.gs.id,
-      toUserId: users.gsStaff.id,
-      scopeType: 'FULL_ROLE',
-      scopeJson: JSON.stringify({ roleCode: 'GENERAL_SECRETARY' }),
-      validFrom: new Date('2026-04-01'),
-      validUntil: new Date('2026-06-30'),
-      reason: 'تفويض مؤقت أثناء إجازة الأمين العام',
-    },
-  });
-
-  await prisma.delegation.create({
-    data: {
-      state: 'DELEGATION_DRAFT',
-      fromUserId: users.techPres.id,
-      toUserId: users.techMember1.id,
-      scopeType: 'FULL_ROLE',
-      scopeJson: JSON.stringify({ roleCode: 'COUNCIL_PRESIDENT' }),
-      validFrom: new Date('2026-05-01'),
-      validUntil: new Date('2026-05-15'),
-      reason: 'تفويض مؤقت لرئاسة المجلس',
-    },
-  });
-
-  // ══════════════════════════════════════════════════════
-  // سجلات التدقيق
-  // ══════════════════════════════════════════════════════
-  const auditActions = ['CREATE_TOPIC', 'APPROVE_TOPIC', 'TRANSITION', 'LOGIN', 'CREATE_MEETING'];
-  for (let i = 0; i < 15; i++) {
-    await prisma.auditLog.create({
-      data: {
-        entityType: 'Topic',
-        entityId: allTopics[i % allTopics.length]?.id || 'system',
-        action: auditActions[i % auditActions.length],
-        actorActualId: users.admin.id,
-        actorDisplayId: users.admin.id,
-        reason: 'إجراء نظامي',
-      },
-    });
-  }
-
-  // ══════════════════════════════════════════════════════
-  // إعدادات النظام
-  // ══════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════
+  // 8. تهيئة النظام
+  // ═══════════════════════════════════════════════
+  console.log('⚙️  تهيئة النظام...');
   const configs = [
-    { key: 'MAX_AGENDA_ITEMS', value: '15', valueType: 'INT', description: 'الحد الأقصى لبنود الأجندة' },
-    { key: 'FEEDBACK_DEADLINE_DAYS', value: '7', valueType: 'INT', description: 'مهلة المرئيات بالأيام' },
-    { key: 'EXAM_RETRY_LIMIT', value: '3', valueType: 'INT', description: 'الحد الأقصى لإعادة الفحص' },
-    { key: 'NOTIFICATION_RETRY_MAX', value: '5', valueType: 'INT', description: 'عدد محاولات التبليغ' },
+    { key: 'ORG_NAME_AR', value: 'المنظمة', description: 'اسم المنظمة بالعربي' },
+    { key: 'DEFAULT_PAGE_SIZE', value: '20', valueType: 'INT', description: 'عدد العناصر الافتراضي بالصفحة' },
+    { key: 'FEEDBACK_DEADLINE_DAYS', value: '5', valueType: 'INT', description: 'مهلة مرئيات الأعضاء (أيام)' },
   ];
   for (const c of configs) {
     await prisma.systemConfig.create({ data: c });
   }
 
-  // ══════════════════════════════════════════════════════
-  // ملخص
-  // ══════════════════════════════════════════════════════
-  const counts = {
-    topics: await prisma.topic.count(),
-    statusLogs: await prisma.topicStatusLog.count(),
-    examinations: await prisma.examination.count(),
-    meetings: await prisma.meeting.count(),
-    minutes: await prisma.minutes.count(),
-    decisions: await prisma.decision.count(),
-    notifications: await prisma.notification.count(),
-    delegations: await prisma.delegation.count(),
-    auditLogs: await prisma.auditLog.count(),
-    users: await prisma.user.count(),
-  };
-
-  console.log(`
-══════════════════════════════════════════════════
-
-  📊 ملخص البيانات:
-  ─────────────────────
-  المستخدمون:          ${counts.users}
-  المواضيع:            ${counts.topics}
-  سجلات الحالات:       ${counts.statusLogs}
-  الفحوصات:            ${counts.examinations}
-  الاجتماعات:          ${counts.meetings}
-  المحاضر:             ${counts.minutes}
-  القرارات:            ${counts.decisions}
-  الإشعارات:           ${counts.notifications}
-  التفويضات:           ${counts.delegations}
-  سجلات التدقيق:       ${counts.auditLogs}
-
-  ════════════════════════════════════════════
-  دليل الاختبار — سجّل دخول واختبر الإجراء:
-  ════════════════════════════════════════════
-
-  1. DEPT_STAFF (it.staff@company.sa)
-     → افتح موضوع "مسودة" → اضغط "إرسال للمدير"
-
-  2. DEPT_MANAGER (it.manager@company.sa)
-     → "بانتظار الاعتماد" → اعتماد أو إعادة
-     → "معتمد" → إرسال للأمين أو سحب الاعتماد
-     → "مُعاد" → إعادة الإرسال أو إغلاق
-
-  3. GENERAL_SECRETARY (gs@company.sa)
-     → "مراجعة الأمين" → قبول / تعليق / رفض / إعادة
-     → "معلّق" → استئناف
-
-  4. COUNCIL_SECRETARY (tech.sec@company.sa)
-     → "لدى المجلس" → إحالة للفحص
-     → "فحص غير مكتمل" → إعادة الفحص
-     → "فحص مكتمل" → رفع لرئيس المجلس
-     → "مُعاد للمجلس" → إعادة فحص أو رفع للرئيس
-
-  5. EXAM_OFFICER (tech.exam@company.sa)
-     → "قيد الفحص" → فحص مكتمل / غير مكتمل
-
-  6. COUNCIL_PRESIDENT (tech.pres@company.sa)
-     → "مراجعة الرئيس" → مناسب للإدراج / إعادة
-     → "مرتبط باجتماع" → تأجيل في الجلسة
-
-  7. COUNCIL_MEMBER (tech.m1@company.sa)
-     → محضر بانتظار المرئيات → إضافة مرئية
-
-  8. GS_OFFICE_STAFF (gs.staff@company.sa)
-     → نفس صلاحيات الأمين (عبر التفويض)
-
-  9. SYSTEM_ADMIN (admin@company.sa)
-     → صفحات الإدارة: المستخدمون / المجالس / الإعدادات
-
-  كلمة المرور لجميع الحسابات: Admin@123
-`);
+  // ═══════════════════════════════════════════════
+  console.log('\n✅ تم توليد البيانات بنجاح!\n');
+  console.log('═══════════════════════════════════════════════');
+  console.log('  بيانات الدخول (كلمة المرور: Admin@123)');
+  console.log('═══════════════════════════════════════════════');
+  console.log('  مدير النظام:        admin@company.sa');
+  console.log('  الأمين العام:       gs@company.sa');
+  console.log('  موظف مكتب الأمين:  gs.staff@company.sa');
+  console.log('  ─────────────────────────────────────');
+  console.log('  وكالة التقنية:');
+  console.log('    وكيل التقنية:     tech.vp@company.sa');
+  console.log('    مدير البنية:      infra.mgr@company.sa');
+  console.log('    رئيس قسم الشبكات: net.mgr@company.sa');
+  console.log('    موظف شبكات:       net.emp@company.sa');
+  console.log('    مدير التطوير:     dev.mgr@company.sa');
+  console.log('    موظفة برمجة:      prog.emp@company.sa');
+  console.log('  ─────────────────────────────────────');
+  console.log('  وكالة الموارد البشرية:');
+  console.log('    وكيل الموارد:     hr.vp@company.sa');
+  console.log('    مدير التوظيف:     recruit.mgr@company.sa');
+  console.log('    موظفة توظيف:      hr.emp@company.sa');
+  console.log('  ─────────────────────────────────────');
+  console.log('  مجلس التقنية:');
+  console.log('    أمين المجلس:      tech.sec@company.sa');
+  console.log('    رئيس المجلس:      tech.pres@company.sa');
+  console.log('    عضو مجلس:         tech.m1@company.sa');
+  console.log('    فاحص:             tech.exam@company.sa');
+  console.log('═══════════════════════════════════════════════');
+  console.log('');
+  console.log('  سيناريو الاختبار (وكالة التقنية - 3 مستويات):');
+  console.log('  net.emp ينشئ موضوع → net.mgr يعتمد → infra.mgr يعتمد → tech.vp يعتمد → gs يقبل → المجلس');
+  console.log('');
+  console.log('  سيناريو الاختبار (وكالة الموارد - مستوى واحد):');
+  console.log('  hr.emp ينشئ موضوع → recruit.mgr يعتمد → hr.vp يعتمد → gs يقبل → المجلس');
+  console.log('═══════════════════════════════════════════════\n');
 }
 
 main()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect());
+  .catch((e) => {
+    console.error('❌ خطأ:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

@@ -13,10 +13,11 @@ export class OrgUnitsService {
 
   async findAll() {
     return this.prisma.organizationUnit.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: [{ level: 'asc' }, { name: 'asc' }],
       include: {
-        parent: true,
-        children: true,
+        parent: { select: { id: true, name: true } },
+        children: { select: { id: true, name: true } },
+        manager: { select: { id: true, displayName: true } },
       },
     });
   }
@@ -53,20 +54,28 @@ export class OrgUnitsService {
       }
     }
 
+    // Auto-calculate level from parent
+    let level = 0;
     if (dto.parentId) {
       const parent = await this.prisma.organizationUnit.findUnique({
         where: { id: dto.parentId },
+        select: { id: true, level: true },
       });
       if (!parent) {
         throw new NotFoundException(`Parent org ${dto.parentId} not found`);
       }
+      level = parent.level + 1;
     }
 
     return this.prisma.organizationUnit.create({
       data: {
         name: dto.name,
-        code: dto.code,
+        code: dto.code || `ORG_${Date.now()}`,
         parentId: dto.parentId,
+        unitType: dto.unitType || 'DEPARTMENT',
+        level: dto.level ?? level,
+        managerId: dto.managerId,
+        isApprovalAuthority: dto.isApprovalAuthority ?? false,
         isActive: dto.isActive ?? true,
       },
       include: { parent: true },
@@ -100,9 +109,13 @@ export class OrgUnitsService {
         name: dto.name,
         code: dto.code,
         parentId: dto.parentId,
+        unitType: dto.unitType,
+        level: dto.level,
+        managerId: dto.managerId,
+        isApprovalAuthority: dto.isApprovalAuthority,
         isActive: dto.isActive,
       },
-      include: { parent: true },
+      include: { parent: true, manager: { select: { id: true, displayName: true } } },
     });
   }
 }

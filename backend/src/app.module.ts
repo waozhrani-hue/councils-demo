@@ -16,6 +16,7 @@ import { DelegationsModule } from './delegations/delegations.module';
 import { AuditModule } from './audit/audit.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ConfigsModule } from './config/configs.module';
+import { WorkflowModule } from './workflow/workflow.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ConfigsModule } from './config/configs.module';
     AuditModule,
     DashboardModule,
     ConfigsModule,
+    WorkflowModule,
   ],
 })
 export class AppModule {}

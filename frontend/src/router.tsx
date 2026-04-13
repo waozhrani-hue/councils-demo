@@ -4,6 +4,7 @@ import ProtectedRoute from '@/layout/ProtectedRoute';
 import LoginPage from '@/pages/login/LoginPage';
 import DashboardPage from '@/pages/dashboard/DashboardPage';
 import TopicsListPage from '@/pages/topics/TopicsListPage';
+import AllTopicsPage from '@/pages/topics/AllTopicsPage';
 import CreateTopicPage from '@/pages/topics/CreateTopicPage';
 import TopicDetailPage from '@/pages/topics/TopicDetailPage';
 import GSInboxPage from '@/pages/inbox/GSInboxPage';
@@ -20,6 +21,8 @@ import TeamPage from '@/pages/team/TeamPage';
 import AdminUsersPage from '@/pages/admin/AdminUsersPage';
 import AdminCouncilsPage from '@/pages/admin/AdminCouncilsPage';
 import AdminOrgUnitsPage from '@/pages/admin/AdminOrgUnitsPage';
+import AdminOrgStructurePage from '@/pages/admin/AdminOrgStructurePage';
+import AdminRolesPage from '@/pages/admin/AdminRolesPage';
 import AdminConfigPage from '@/pages/admin/AdminConfigPage';
 import AdminAuditPage from '@/pages/admin/AdminAuditPage';
 
@@ -40,6 +43,7 @@ export const router = createBrowserRouter([
           { path: 'topics', element: <TopicsListPage /> },
           { path: 'topics/new', element: <CreateTopicPage /> },
           { path: 'topics/:id', element: <TopicDetailPage /> },
+          { path: 'all-topics', element: <AllTopicsPage /> },
           { path: 'inbox', element: <GSInboxPage /> },
           { path: 'examinations', element: <ExaminationsPage /> },
           { path: 'agenda/:councilId?', element: <AgendaBoxPage /> },
@@ -55,6 +59,8 @@ export const router = createBrowserRouter([
           { path: 'admin/users', element: <AdminUsersPage /> },
           { path: 'admin/councils', element: <AdminCouncilsPage /> },
           { path: 'admin/org-units', element: <AdminOrgUnitsPage /> },
+          { path: 'admin/org-structure', element: <AdminOrgStructurePage /> },
+          { path: 'admin/roles', element: <AdminRolesPage /> },
           { path: 'admin/config', element: <AdminConfigPage /> },
           { path: 'admin/audit', element: <AdminAuditPage /> },
         ],
