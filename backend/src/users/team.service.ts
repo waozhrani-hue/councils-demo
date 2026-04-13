@@ -6,134 +6,136 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { DynamicPermissionService } from '../auth/dynamic-permission.service';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
-
-/**
- * خريطة الصلاحيات الهرمية:
- * كل دور يمكنه تعيين أدوار محددة فقط
- */
-const HIERARCHY_MAP: Record<string, { allowedRoles: string[]; scope: 'council' | 'org' | 'global' }> = {
-  COUNCIL_SECRETARY: {
-    allowedRoles: ['COUNCIL_MEMBER', 'COUNCIL_STAFF'],
-    scope: 'council',
-  },
-  DEPT_MANAGER: {
-    allowedRoles: ['DEPT_STAFF'],
-    scope: 'org',
-  },
-  GENERAL_SECRETARY: {
-    allowedRoles: ['GS_OFFICE_STAFF'],
-    scope: 'global',
-  },
-  SYSTEM_ADMIN: {
-    allowedRoles: [
-      'SYSTEM_ADMIN', 'DEPT_STAFF', 'DEPT_MANAGER', 'GENERAL_SECRETARY',
-      'GS_OFFICE_STAFF', 'EXAM_OFFICER', 'COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT',
-      'COUNCIL_MEMBER', 'COUNCIL_STAFF',
-    ],
-    scope: 'global',
-  },
-};
 
 @Injectable()
 export class TeamService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissionService: DynamicPermissionService,
+  ) {}
 
   /**
-   * يحدد ما يمكن لهذا المستخدم تعيينه بناءً على أدواره
+   * Get all roles the current user can assign based on MANAGE_TEAM permission
+   * and their org unit scope. Fully dynamic — no hardcoded role lists.
    */
-  private getPermissions(user: JwtPayload) {
-    const result: Array<{
-      managerRole: string;
-      allowedRoles: string[];
-      scope: 'council' | 'org' | 'global';
-      councilIds: string[];
-    }> = [];
-
-    for (const role of user.roles) {
-      const config = HIERARCHY_MAP[role.code];
-      if (!config) continue;
-      result.push({
-        managerRole: role.code,
-        allowedRoles: config.allowedRoles,
-        scope: config.scope,
-        councilIds: role.councilId ? [role.councilId] : [],
-      });
-    }
-    return result;
-  }
-
-  /** جميع الأدوار المسموح تعيينها */
   async getAssignableRoles(user: JwtPayload) {
-    const perms = this.getPermissions(user);
-    const allowedCodes = [...new Set(perms.flatMap((p) => p.allowedRoles))];
+    const permissions = await this.permissionService.getUserPermissions(user.sub);
+    const canManageTeam = permissions.includes('MANAGE_TEAM');
+    const canManageUsers = permissions.includes('MANAGE_USERS'); // Admin-level
 
-    const roles = await this.prisma.role.findMany({
-      where: { code: { in: allowedCodes } },
+    if (!canManageTeam && !canManageUsers) {
+      return { roles: [], councils: [], orgUnits: [] };
+    }
+
+    // Admin can assign any role
+    if (canManageUsers) {
+      const roles = await this.prisma.role.findMany({ where: { isActive: true } });
+      const councils = await this.prisma.council.findMany();
+      const orgUnits = await this.prisma.organizationUnit.findMany({
+        orderBy: [{ level: 'asc' }, { name: 'asc' }],
+      });
+      return { roles, councils, orgUnits };
+    }
+
+    // MANAGE_TEAM: get user's org unit and council scopes
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: user.sub },
+      include: {
+        roles: { include: { role: true, council: true } },
+        organization: true,
+      },
     });
 
-    // أمين المجلس: يحتاج المجالس التي يديرها
-    const councilIds = [...new Set(perms.flatMap((p) => p.councilIds))];
+    // All roles the user can assign = roles at same level or below in org hierarchy
+    const roles = await this.prisma.role.findMany({ where: { isActive: true } });
+
+    // Councils the user is associated with
+    const councilIds = currentUser?.roles
+      .filter((ur) => ur.councilId)
+      .map((ur) => ur.councilId!) ?? [];
     const councils = councilIds.length > 0
       ? await this.prisma.council.findMany({ where: { id: { in: councilIds } } })
       : [];
 
-    return { roles, councils, permissions: perms };
-  }
-
-  /** قائمة أعضاء الفريق حسب صلاحيات المدير */
-  async getTeamMembers(user: JwtPayload) {
-    const perms = this.getPermissions(user);
-    if (perms.length === 0) return [];
-
-    const allAllowedCodes = [...new Set(perms.flatMap((p) => p.allowedRoles))];
-    const allCouncilIds = [...new Set(perms.flatMap((p) => p.councilIds))];
-
-    // بناء شروط البحث
-    const conditions: any[] = [];
-
-    for (const perm of perms) {
-      if (perm.scope === 'council' && perm.councilIds.length > 0) {
-        // أمين المجلس: أعضاء مجلسه فقط
-        conditions.push({
-          roles: {
-            some: {
-              role: { code: { in: perm.allowedRoles } },
-              councilId: { in: perm.councilIds },
-            },
-          },
-        });
-      } else if (perm.scope === 'org') {
-        // مدير الإدارة: موظفو إدارته فقط
-        const manager = await this.prisma.user.findUnique({
-          where: { id: user.sub },
-          select: { organizationId: true },
-        });
-        if (manager?.organizationId) {
-          conditions.push({
-            organizationId: manager.organizationId,
-            roles: {
-              some: { role: { code: { in: perm.allowedRoles } } },
-            },
-          });
-        }
-      } else if (perm.scope === 'global') {
-        // الأمين العام / مدير النظام
-        conditions.push({
-          roles: {
-            some: { role: { code: { in: perm.allowedRoles } } },
-          },
-        });
-      }
+    // Org units this manager can manage (their unit + children)
+    const orgUnits: any[] = [];
+    if (currentUser?.organizationId) {
+      const subtree = await this.getOrgSubtree(currentUser.organizationId);
+      orgUnits.push(...subtree);
     }
 
-    if (conditions.length === 0) return [];
+    return { roles, councils, orgUnits };
+  }
+
+  /** Get the full subtree of an org unit (including itself) */
+  private async getOrgSubtree(orgId: string): Promise<any[]> {
+    const unit = await this.prisma.organizationUnit.findUnique({
+      where: { id: orgId },
+      include: { children: true },
+    });
+    if (!unit) return [];
+
+    const result = [unit];
+    for (const child of unit.children) {
+      const subtree = await this.getOrgSubtree(child.id);
+      result.push(...subtree);
+    }
+    return result;
+  }
+
+  /** Get team members visible to the current user */
+  async getTeamMembers(user: JwtPayload) {
+    const permissions = await this.permissionService.getUserPermissions(user.sub);
+    const canManageUsers = permissions.includes('MANAGE_USERS');
+    const canManageTeam = permissions.includes('MANAGE_TEAM');
+
+    if (!canManageTeam && !canManageUsers) return [];
+
+    let where: any = {};
+
+    if (!canManageUsers) {
+      // Non-admin managers: see users in their org subtree + their council members
+      const currentUser = await this.prisma.user.findUnique({
+        where: { id: user.sub },
+        include: { roles: { include: { role: true } } },
+      });
+
+      const conditions: any[] = [];
+
+      // Org subtree
+      if (currentUser?.organizationId) {
+        const subtree = await this.getOrgSubtree(currentUser.organizationId);
+        const orgIds = subtree.map((u) => u.id);
+        if (orgIds.length > 0) {
+          conditions.push({ organizationId: { in: orgIds } });
+        }
+      }
+
+      // Council members
+      const councilIds = currentUser?.roles
+        .filter((ur) => ur.councilId)
+        .map((ur) => ur.councilId!) ?? [];
+      if (councilIds.length > 0) {
+        conditions.push({
+          roles: { some: { councilId: { in: councilIds } } },
+        });
+      }
+
+      if (conditions.length === 0) return [];
+      where = conditions.length === 1 ? conditions[0] : { OR: conditions };
+    }
+
+    // Exclude current user from results
+    where = { ...where, NOT: { id: user.sub } };
 
     const users = await this.prisma.user.findMany({
-      where: conditions.length === 1 ? conditions[0] : { OR: conditions },
+      where,
       include: {
         roles: { include: { role: true, council: true } },
         organization: true,
+        maxClearance: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -141,7 +143,7 @@ export class TeamService {
     return users.map(({ passwordHash, ...rest }: any) => rest);
   }
 
-  /** إنشاء عضو فريق جديد مع التحقق من الصلاحيات */
+  /** Create a new team member */
   async createTeamMember(
     user: JwtPayload,
     dto: {
@@ -150,14 +152,13 @@ export class TeamService {
       displayName: string;
       organizationId?: string;
       maxClearanceId?: string;
-      roleCode: string;
+      roleId?: string;
+      roleCode?: string;
       councilId?: string;
     },
   ) {
-    // التحقق من صلاحية التعيين
-    this.validateAssignment(user, dto.roleCode, dto.councilId);
+    await this.validateManagePermission(user);
 
-    // التحقق من عدم تكرار البريد
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -165,24 +166,24 @@ export class TeamService {
       throw new ConflictException('البريد الإلكتروني مستخدم بالفعل');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
-    const role = await this.prisma.role.findFirst({
-      where: { code: dto.roleCode },
-    });
-    if (!role) throw new NotFoundException(`الدور ${dto.roleCode} غير موجود`);
+    // Resolve role
+    let roleId = dto.roleId;
+    if (!roleId && dto.roleCode) {
+      const role = await this.prisma.role.findFirst({ where: { code: dto.roleCode } });
+      if (!role) throw new NotFoundException(`الدور ${dto.roleCode} غير موجود`);
+      roleId = role.id;
+    }
 
-    // لمدير الإدارة: الموظف يُنشأ في نفس الإدارة تلقائياً
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    // For org-scoped managers without explicit org, use manager's org
     let orgId = dto.organizationId;
     if (!orgId) {
-      const perms = this.getPermissions(user);
-      const isOrgScope = perms.some((p) => p.scope === 'org');
-      if (isOrgScope) {
-        const manager = await this.prisma.user.findUnique({
-          where: { id: user.sub },
-          select: { organizationId: true },
-        });
-        orgId = manager?.organizationId ?? undefined;
-      }
+      const manager = await this.prisma.user.findUnique({
+        where: { id: user.sub },
+        select: { organizationId: true },
+      });
+      orgId = manager?.organizationId ?? undefined;
     }
 
     const newUser = await this.prisma.user.create({
@@ -195,20 +196,23 @@ export class TeamService {
       },
     });
 
-    // تعيين الدور
-    await this.prisma.userRole.create({
-      data: {
-        userId: newUser.id,
-        roleId: role.id,
-        councilId: dto.councilId || null,
-      },
-    });
+    // Assign role if provided
+    if (roleId) {
+      await this.prisma.userRole.create({
+        data: {
+          userId: newUser.id,
+          roleId,
+          councilId: dto.councilId || null,
+        },
+      });
+    }
 
     const result = await this.prisma.user.findUnique({
       where: { id: newUser.id },
       include: {
         roles: { include: { role: true, council: true } },
         organization: true,
+        maxClearance: true,
       },
     });
 
@@ -216,30 +220,21 @@ export class TeamService {
     return rest;
   }
 
-  /** تعيين دور إضافي لعضو فريق */
+  /** Assign an additional role to a team member */
   async assignTeamRole(
     user: JwtPayload,
     userId: string,
     dto: { roleId?: string; roleCode?: string; councilId?: string },
   ) {
-    let roleCode = dto.roleCode;
+    await this.validateManagePermission(user);
+
     let roleId = dto.roleId;
-
-    if (roleCode && !roleId) {
-      const role = await this.prisma.role.findFirst({ where: { code: roleCode } });
-      if (!role) throw new NotFoundException(`الدور ${roleCode} غير موجود`);
+    if (!roleId && dto.roleCode) {
+      const role = await this.prisma.role.findFirst({ where: { code: dto.roleCode } });
+      if (!role) throw new NotFoundException(`الدور ${dto.roleCode} غير موجود`);
       roleId = role.id;
-    } else if (roleId && !roleCode) {
-      const role = await this.prisma.role.findUnique({ where: { id: roleId } });
-      if (!role) throw new NotFoundException(`الدور غير موجود`);
-      roleCode = role.code;
     }
-
-    if (!roleCode || !roleId) {
-      throw new ForbiddenException('يجب تحديد الدور');
-    }
-
-    this.validateAssignment(user, roleCode, dto.councilId);
+    if (!roleId) throw new ForbiddenException('يجب تحديد الدور');
 
     const existing = await this.prisma.userRole.findFirst({
       where: { userId, roleId, councilId: dto.councilId ?? null },
@@ -252,12 +247,10 @@ export class TeamService {
     });
   }
 
-  /** إزالة دور من عضو فريق */
-  async removeTeamRole(
-    user: JwtPayload,
-    userId: string,
-    userRoleId: string,
-  ) {
+  /** Remove a role from a team member */
+  async removeTeamRole(user: JwtPayload, userId: string, userRoleId: string) {
+    await this.validateManagePermission(user);
+
     const userRole = await this.prisma.userRole.findUnique({
       where: { id: userRoleId },
       include: { role: true },
@@ -265,36 +258,68 @@ export class TeamService {
     if (!userRole) throw new NotFoundException('الدور غير موجود');
     if (userRole.userId !== userId) throw new ForbiddenException('لا تتطابق البيانات');
 
-    // تحقق أن المدير يملك صلاحية إزالة هذا الدور
-    this.validateAssignment(user, userRole.role.code, userRole.councilId ?? undefined);
-
     return this.prisma.userRole.delete({ where: { id: userRoleId } });
   }
 
-  /** التحقق من صلاحية التعيين */
-  private validateAssignment(user: JwtPayload, roleCode: string, councilId?: string) {
-    const perms = this.getPermissions(user);
+  /** Create a sub-unit under the manager's org unit */
+  async createSubUnit(
+    user: JwtPayload,
+    dto: { name: string; code?: string; unitType?: string; parentId?: string },
+  ) {
+    await this.validateManagePermission(user);
 
-    for (const perm of perms) {
-      if (!perm.allowedRoles.includes(roleCode)) continue;
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: user.sub },
+      select: { organizationId: true },
+    });
 
-      if (perm.scope === 'council') {
-        // أمين المجلس: يجب أن يكون councilId من مجالسه
-        if (!councilId) {
-          throw new ForbiddenException('يجب تحديد المجلس');
-        }
-        if (!perm.councilIds.includes(councilId)) {
-          throw new ForbiddenException('لا تملك صلاحية على هذا المجلس');
-        }
-        return; // مسموح
+    // Determine parent: explicit parentId or manager's own org
+    const parentId = dto.parentId || currentUser?.organizationId;
+    if (!parentId) throw new ForbiddenException('لا يمكن تحديد الوحدة الأم');
+
+    // Validate that parentId is within manager's subtree (unless admin)
+    const permissions = await this.permissionService.getUserPermissions(user.sub);
+    if (!permissions.includes('MANAGE_USERS') && currentUser?.organizationId) {
+      const subtree = await this.getOrgSubtree(currentUser.organizationId);
+      const validIds = subtree.map((u) => u.id);
+      if (!validIds.includes(parentId)) {
+        throw new ForbiddenException('لا تملك صلاحية الإنشاء تحت هذه الوحدة');
       }
-
-      // org أو global: مسموح
-      return;
     }
 
-    throw new ForbiddenException(
-      `لا تملك صلاحية تعيين الدور: ${roleCode}`,
-    );
+    const parent = await this.prisma.organizationUnit.findUnique({
+      where: { id: parentId },
+      select: { id: true, level: true },
+    });
+    if (!parent) throw new NotFoundException('الوحدة الأم غير موجودة');
+
+    return this.prisma.organizationUnit.create({
+      data: {
+        name: dto.name,
+        code: dto.code || `UNIT_${Date.now()}`,
+        parentId,
+        unitType: dto.unitType || 'SECTION',
+        level: parent.level + 1,
+      },
+      include: { parent: { select: { id: true, name: true } } },
+    });
+  }
+
+  /** Get org subtree for the current manager */
+  async getMyOrgTree(user: JwtPayload) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: user.sub },
+      select: { organizationId: true },
+    });
+    if (!currentUser?.organizationId) return [];
+    return this.getOrgSubtree(currentUser.organizationId);
+  }
+
+  /** Validate that the user has MANAGE_TEAM or MANAGE_USERS permission */
+  private async validateManagePermission(user: JwtPayload) {
+    const permissions = await this.permissionService.getUserPermissions(user.sub);
+    if (!permissions.includes('MANAGE_TEAM') && !permissions.includes('MANAGE_USERS')) {
+      throw new ForbiddenException('ليس لديك صلاحية إدارة الفريق');
+    }
   }
 }

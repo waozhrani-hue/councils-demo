@@ -11,36 +11,23 @@ import {
   Tag,
   Popconfirm,
   message,
-  Alert,
+  Divider,
+  Tree,
+  Card,
+  Tabs,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  ApartmentOutlined,
+  UserAddOutlined,
+} from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import { useAuthStore } from '@/lib/auth';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
-const { Title } = Typography;
-
-const ROLE_LABELS: Record<string, string> = {
-  SYSTEM_ADMIN: 'مدير النظام',
-  DEPT_STAFF: 'موظف إدارة',
-  DEPT_MANAGER: 'مدير إدارة',
-  GENERAL_SECRETARY: 'الأمين العام',
-  GS_OFFICE_STAFF: 'موظف مكتب الأمين',
-  EXAM_OFFICER: 'مسؤول الفحص',
-  COUNCIL_SECRETARY: 'أمين المجلس',
-  COUNCIL_PRESIDENT: 'رئيس المجلس',
-  COUNCIL_MEMBER: 'عضو مجلس',
-  COUNCIL_STAFF: 'موظف مجلس',
-};
-
-const ROLE_COLORS: Record<string, string> = {
-  COUNCIL_MEMBER: 'blue',
-  COUNCIL_STAFF: 'cyan',
-  DEPT_STAFF: 'green',
-  GS_OFFICE_STAFF: 'purple',
-};
+const { Title, Text } = Typography;
 
 interface TeamMember {
   id: string;
@@ -49,31 +36,29 @@ interface TeamMember {
   isActive: boolean;
   createdAt: string;
   organization?: { id: string; name: string };
+  maxClearance?: { id: string; name: string };
   roles: Array<{
     id: string;
     roleId: string;
     councilId?: string;
-    role: { id: string; code: string; labelAr: string };
+    role: { id: string; code: string; nameAr?: string; labelAr?: string };
     council?: { id: string; name: string };
   }>;
 }
 
 interface AssignableData {
-  roles: Array<{ id: string; code: string; labelAr: string }>;
+  roles: Array<{ id: string; code: string; nameAr?: string; labelAr?: string; scope?: string }>;
   councils: Array<{ id: string; name: string }>;
-  permissions: Array<{
-    managerRole: string;
-    allowedRoles: string[];
-    scope: 'council' | 'org' | 'global';
-    councilIds: string[];
-  }>;
+  orgUnits: Array<{ id: string; name: string; parentId?: string; level: number }>;
 }
 
 export default function TeamPage() {
-  const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [unitDrawerOpen, setUnitDrawerOpen] = useState(false);
   const [form] = Form.useForm();
+  const [unitForm] = Form.useForm();
+  const [activeTab, setActiveTab] = useState('members');
 
   const { data: assignable } = useQuery({
     queryKey: ['team-assignable-roles'],
@@ -85,6 +70,16 @@ export default function TeamPage() {
     queryFn: () => apiClient.get<TeamMember[]>('/api/v1/team/members'),
   });
 
+  const { data: orgTree } = useQuery({
+    queryKey: ['team-org-tree'],
+    queryFn: () => apiClient.get<any[]>('/api/v1/team/org-tree'),
+  });
+
+  const { data: clearanceLevels } = useQuery({
+    queryKey: ['clearance-levels'],
+    queryFn: () => apiClient.get<any[]>('/api/v1/configs/secret-levels'),
+  });
+
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) =>
       apiClient.post('/api/v1/team/members', values),
@@ -92,6 +87,20 @@ export default function TeamPage() {
       message.success('تم إنشاء العضو بنجاح');
       queryClient.invalidateQueries({ queryKey: ['team-members'] });
       closeDrawer();
+    },
+    onError: (err: any) => {
+      message.error(err?.response?.data?.message || err.message || 'فشل الإنشاء');
+    },
+  });
+
+  const createUnitMutation = useMutation({
+    mutationFn: (values: Record<string, unknown>) =>
+      apiClient.post('/api/v1/team/sub-units', values),
+    onSuccess: () => {
+      message.success('تم إنشاء الوحدة الفرعية');
+      queryClient.invalidateQueries({ queryKey: ['team-org-tree'] });
+      setUnitDrawerOpen(false);
+      unitForm.resetFields();
     },
     onError: (err: any) => {
       message.error(err?.response?.data?.message || err.message || 'فشل الإنشاء');
@@ -112,38 +121,48 @@ export default function TeamPage() {
 
   const roles = assignable?.roles ?? [];
   const councils = assignable?.councils ?? [];
-  const permissions = assignable?.permissions ?? [];
 
-  // هل النطاق يتطلب اختيار مجلس؟
-  const needsCouncil = useMemo(() => {
-    return permissions.some((p) => p.scope === 'council');
-  }, [permissions]);
+  const getRoleName = (role: any) => role?.nameAr || role?.labelAr || role?.code || '';
 
-  // الدور المختار يحتاج مجلس؟
-  const selectedRoleCode = Form.useWatch('roleCode', form);
-  const selectedRoleNeedsCouncil = useMemo(() => {
-    if (!selectedRoleCode) return false;
-    return ['COUNCIL_MEMBER', 'COUNCIL_STAFF', 'EXAM_OFFICER', 'COUNCIL_SECRETARY', 'COUNCIL_PRESIDENT'].includes(selectedRoleCode);
-  }, [selectedRoleCode]);
+  // Determine if the selected role needs a council
+  const selectedRoleId = Form.useWatch('roleId', form);
+  const selectedRole = useMemo(
+    () => roles.find((r) => r.id === selectedRoleId),
+    [roles, selectedRoleId],
+  );
+  const needsCouncil = selectedRole?.scope === 'COUNCIL';
 
-  // عنوان الصفحة حسب الدور
-  const pageTitle = useMemo(() => {
-    const codes = user?.roles.map((r) => r.code) ?? [];
-    if (codes.includes('COUNCIL_SECRETARY')) return 'إدارة أعضاء المجلس';
-    if (codes.includes('DEPT_MANAGER')) return 'إدارة موظفي الإدارة';
-    if (codes.includes('GENERAL_SECRETARY')) return 'إدارة موظفي المكتب';
-    return 'إدارة الفريق';
-  }, [user]);
+  // Build org tree data for Tree component
+  const treeData = useMemo(() => {
+    if (!orgTree || !Array.isArray(orgTree)) return [];
+    const map = new Map<string, any>();
+    const roots: any[] = [];
+    for (const unit of orgTree) {
+      map.set(unit.id, { title: unit.name, key: unit.id, children: [] });
+    }
+    for (const unit of orgTree) {
+      const node = map.get(unit.id);
+      if (unit.parentId && map.has(unit.parentId)) {
+        map.get(unit.parentId).children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    return roots;
+  }, [orgTree]);
+
+  const clearanceOptions = (Array.isArray(clearanceLevels) ? clearanceLevels : []).map((c: any) => ({
+    label: c.name,
+    value: c.id,
+  }));
 
   const openDrawer = () => {
     form.resetFields();
-    // إذا كان هناك مجلس واحد فقط، اختره تلقائياً
     if (councils.length === 1) {
       form.setFieldValue('councilId', councils[0].id);
     }
-    // إذا كان هناك دور واحد فقط، اختره تلقائياً
     if (roles.length === 1) {
-      form.setFieldValue('roleCode', roles[0].code);
+      form.setFieldValue('roleId', roles[0].id);
     }
     setDrawerOpen(true);
   };
@@ -159,44 +178,50 @@ export default function TeamPage() {
     });
   };
 
+  const handleCreateUnit = () => {
+    unitForm.validateFields().then((values) => {
+      createUnitMutation.mutate(values);
+    });
+  };
+
   const columns: ColumnsType<TeamMember> = [
+    { title: 'الاسم', dataIndex: 'displayName', key: 'displayName', width: 180 },
+    { title: 'البريد الإلكتروني', dataIndex: 'email', key: 'email', width: 220 },
     {
-      title: 'الاسم',
-      dataIndex: 'displayName',
-      key: 'displayName',
-      width: 180,
-    },
-    {
-      title: 'البريد الإلكتروني',
-      dataIndex: 'email',
-      key: 'email',
-      width: 220,
+      title: 'الوحدة التنظيمية',
+      key: 'organization',
+      width: 140,
+      render: (_: unknown, record: TeamMember) => record.organization?.name || '-',
     },
     {
       title: 'الأدوار',
       key: 'roles',
-      width: 300,
+      width: 280,
       render: (_: unknown, record: TeamMember) => (
         <Space size={[0, 4]} wrap>
           {record.roles.map((ur) => (
             <Tag
               key={ur.id}
-              color={ROLE_COLORS[ur.role.code] ?? 'default'}
+              color="blue"
               closable
               onClose={(e) => {
                 e.preventDefault();
-                removeRoleMutation.mutate({
-                  userId: record.id,
-                  userRoleId: ur.id,
-                });
+                removeRoleMutation.mutate({ userId: record.id, userRoleId: ur.id });
               }}
             >
-              {ROLE_LABELS[ur.role.code] || ur.role.labelAr}
+              {getRoleName(ur.role)}
               {ur.council ? ` — ${ur.council.name}` : ''}
             </Tag>
           ))}
         </Space>
       ),
+    },
+    {
+      title: 'مستوى التصنيف',
+      key: 'clearance',
+      width: 120,
+      render: (_: unknown, record: TeamMember) =>
+        record.maxClearance ? <Tag>{record.maxClearance.name}</Tag> : '-',
     },
     {
       title: 'الحالة',
@@ -219,49 +244,57 @@ export default function TeamPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>
-          {pageTitle}
-        </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openDrawer}>
-          إضافة عضو
-        </Button>
+        <Title level={4} style={{ margin: 0 }}>إدارة الفريق</Title>
+        <Space>
+          <Button icon={<ApartmentOutlined />} onClick={() => setUnitDrawerOpen(true)}>
+            إضافة وحدة فرعية
+          </Button>
+          <Button type="primary" icon={<UserAddOutlined />} onClick={openDrawer}>
+            إضافة عضو
+          </Button>
+        </Space>
       </div>
 
-      {permissions.length > 0 && (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message={
-            <span>
-              يمكنك إضافة:{' '}
-              {roles.map((r) => (
-                <Tag key={r.code} color={ROLE_COLORS[r.code] ?? 'blue'}>
-                  {ROLE_LABELS[r.code] || r.labelAr}
-                </Tag>
-              ))}
-              {councils.length > 0 && (
-                <>
-                  في:{' '}
-                  {councils.map((c) => (
-                    <Tag key={c.id}>{c.name}</Tag>
-                  ))}
-                </>
-              )}
-            </span>
-          }
-        />
-      )}
-
-      <Table
-        columns={columns}
-        dataSource={Array.isArray(members) ? members : []}
-        rowKey="id"
-        loading={isLoading}
-        pagination={{ pageSize: 15, showTotal: (t) => `الإجمالي: ${t}` }}
-        scroll={{ x: 900 }}
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: 'members',
+            label: 'الأعضاء',
+            children: (
+              <Table
+                columns={columns}
+                dataSource={Array.isArray(members) ? members : []}
+                rowKey="id"
+                loading={isLoading}
+                pagination={{ pageSize: 15, showTotal: (t) => `الإجمالي: ${t}` }}
+                scroll={{ x: 1100 }}
+              />
+            ),
+          },
+          {
+            key: 'structure',
+            label: 'الهيكل التنظيمي',
+            children: (
+              <Card>
+                {treeData.length > 0 ? (
+                  <Tree
+                    treeData={treeData}
+                    defaultExpandAll
+                    showLine
+                    selectable={false}
+                  />
+                ) : (
+                  <Text type="secondary">لا توجد وحدات تنظيمية</Text>
+                )}
+              </Card>
+            ),
+          },
+        ]}
       />
 
+      {/* Add Member Drawer */}
       <Drawer
         title="إضافة عضو جديد"
         open={drawerOpen}
@@ -277,57 +310,104 @@ export default function TeamPage() {
         }
       >
         <Form form={form} layout="vertical">
-          <Form.Item
-            name="displayName"
-            label="الاسم"
-            rules={[{ required: true, message: 'مطلوب' }]}
-          >
+          <Form.Item name="displayName" label="الاسم" rules={[{ required: true, message: 'مطلوب' }]}>
             <Input placeholder="أدخل الاسم" />
           </Form.Item>
-          <Form.Item
-            name="email"
-            label="البريد الإلكتروني"
-            rules={[
-              { required: true, message: 'مطلوب' },
-              { type: 'email', message: 'بريد إلكتروني غير صالح' },
-            ]}
-          >
+          <Form.Item name="email" label="البريد الإلكتروني"
+            rules={[{ required: true, message: 'مطلوب' }, { type: 'email', message: 'بريد إلكتروني غير صالح' }]}>
             <Input placeholder="أدخل البريد الإلكتروني" />
           </Form.Item>
-          <Form.Item
-            name="password"
-            label="كلمة المرور"
-            rules={[
-              { required: true, message: 'مطلوب' },
-              { min: 6, message: 'الحد الأدنى 6 أحرف' },
-            ]}
-          >
+          <Form.Item name="password" label="كلمة المرور"
+            rules={[{ required: true, message: 'مطلوب' }, { min: 6, message: 'الحد الأدنى 6 أحرف' }]}>
             <Input.Password placeholder="أدخل كلمة المرور" />
           </Form.Item>
-          <Form.Item
-            name="roleCode"
-            label="الدور"
-            rules={[{ required: true, message: 'مطلوب' }]}
-          >
+          <Form.Item name="roleId" label="الدور" rules={[{ required: true, message: 'مطلوب' }]}>
             <Select
               placeholder="اختر الدور"
+              showSearch
+              filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())}
               options={roles.map((r) => ({
-                label: ROLE_LABELS[r.code] || r.labelAr,
-                value: r.code,
+                label: getRoleName(r),
+                value: r.id,
               }))}
             />
           </Form.Item>
-          {selectedRoleNeedsCouncil && councils.length > 0 && (
-            <Form.Item
-              name="councilId"
-              label="المجلس"
-              rules={[{ required: true, message: 'مطلوب' }]}
-            >
+          {needsCouncil && councils.length > 0 && (
+            <Form.Item name="councilId" label="المجلس" rules={[{ required: true, message: 'مطلوب' }]}>
               <Select
                 placeholder="اختر المجلس"
-                options={councils.map((c) => ({
-                  label: c.name,
-                  value: c.id,
+                options={councils.map((c) => ({ label: c.name, value: c.id }))}
+              />
+            </Form.Item>
+          )}
+          {(assignable?.orgUnits?.length ?? 0) > 0 && (
+            <Form.Item name="organizationId" label="الوحدة التنظيمية">
+              <Select
+                placeholder="اختر الوحدة (اختياري)"
+                allowClear
+                showSearch
+                filterOption={(input, option) => (option?.label as string)?.includes(input)}
+                options={(assignable?.orgUnits ?? []).map((o) => ({
+                  label: o.name,
+                  value: o.id,
+                }))}
+              />
+            </Form.Item>
+          )}
+          <Form.Item name="maxClearanceId" label="مستوى التصنيف الأمني">
+            <Select
+              placeholder="اختر المستوى (اختياري)"
+              allowClear
+              options={clearanceOptions}
+            />
+          </Form.Item>
+        </Form>
+      </Drawer>
+
+      {/* Sub-Unit Drawer */}
+      <Drawer
+        title="إضافة وحدة فرعية"
+        open={unitDrawerOpen}
+        onClose={() => { setUnitDrawerOpen(false); unitForm.resetFields(); }}
+        width={420}
+        extra={
+          <Space>
+            <Button onClick={() => { setUnitDrawerOpen(false); unitForm.resetFields(); }}>إلغاء</Button>
+            <Button type="primary" onClick={handleCreateUnit} loading={createUnitMutation.isPending}>
+              إنشاء
+            </Button>
+          </Space>
+        }
+      >
+        <Form form={unitForm} layout="vertical">
+          <Form.Item name="name" label="اسم الوحدة" rules={[{ required: true, message: 'مطلوب' }]}>
+            <Input placeholder="أدخل اسم الوحدة" />
+          </Form.Item>
+          <Form.Item name="code" label="الرمز">
+            <Input placeholder="رمز فريد (اختياري)" />
+          </Form.Item>
+          <Form.Item name="unitType" label="نوع الوحدة">
+            <Select
+              placeholder="اختر النوع"
+              allowClear
+              options={[
+                { label: 'إدارة', value: 'DEPARTMENT' },
+                { label: 'قسم', value: 'DIVISION' },
+                { label: 'شعبة', value: 'SECTION' },
+                { label: 'وحدة', value: 'UNIT' },
+              ]}
+            />
+          </Form.Item>
+          {(assignable?.orgUnits?.length ?? 0) > 1 && (
+            <Form.Item name="parentId" label="تحت وحدة (اختياري — الافتراضي: وحدتك)">
+              <Select
+                placeholder="اختر الوحدة الأم"
+                allowClear
+                showSearch
+                filterOption={(input, option) => (option?.label as string)?.includes(input)}
+                options={(assignable?.orgUnits ?? []).map((o) => ({
+                  label: `${'—'.repeat(o.level)} ${o.name}`,
+                  value: o.id,
                 }))}
               />
             </Form.Item>

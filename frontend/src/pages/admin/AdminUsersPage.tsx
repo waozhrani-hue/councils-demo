@@ -63,6 +63,11 @@ export default function AdminUsersPage() {
     queryFn: () => apiClient.get<Council[]>('/api/v1/councils'),
   });
 
+  const { data: clearanceLevels } = useQuery({
+    queryKey: ['clearance-levels'],
+    queryFn: () => apiClient.get<any[]>('/api/v1/configs/secret-levels'),
+  });
+
   const queryParams = new URLSearchParams();
   queryParams.set('page', String(page));
   queryParams.set('pageSize', String(pageSize));
@@ -153,6 +158,7 @@ export default function AdminUsersPage() {
         displayName: user.displayName,
         isActive: user.isActive,
         organizationId: user.organizationId,
+        maxClearanceId: user.maxClearanceId,
       });
     } else {
       setEditingUser(null);
@@ -316,6 +322,14 @@ export default function AdminUsersPage() {
               options={(Array.isArray(orgUnits) ? orgUnits : []).map((o) => ({
                 label: o.name,
                 value: o.id,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="maxClearanceId" label="مستوى التصنيف الأمني">
+            <Select placeholder="اختر المستوى" allowClear
+              options={(Array.isArray(clearanceLevels) ? clearanceLevels : []).map((c: any) => ({
+                label: c.name,
+                value: c.id,
               }))}
             />
           </Form.Item>

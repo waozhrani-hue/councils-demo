@@ -1,12 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
 import { CouncilsService } from './councils.service';
 import { CreateCouncilDto } from './dto/create-council.dto';
 import { UpdateCouncilDto } from './dto/update-council.dto';
 
 @Controller('councils')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class CouncilsController {
   constructor(private readonly councilsService: CouncilsService) {}
 
