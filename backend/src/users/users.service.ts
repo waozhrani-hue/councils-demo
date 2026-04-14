@@ -104,6 +104,7 @@ export class UsersService {
         displayName: dto.displayName,
         organizationId: dto.organizationId,
         maxClearanceId: dto.maxClearanceId,
+        isActive: dto.isActive ?? true,
       },
       include: {
         roles: { include: { role: true } },

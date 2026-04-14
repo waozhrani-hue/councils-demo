@@ -25,4 +25,7 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   maxClearanceId?: string;
+
+  @IsOptional()
+  isActive?: boolean;
 }
