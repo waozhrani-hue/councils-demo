@@ -1,16 +1,12 @@
-import { IsDateString, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateDelegationDto {
-  @IsString()
-  @IsNotEmpty()
-  fromUserId: string;
-
   @IsString()
   @IsNotEmpty()
   toUserId: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsIn(['FULL_ROLE', 'SPECIFIC_PERMISSION', 'TOPIC_TYPE'])
   scopeType: string;
 
   @IsString()

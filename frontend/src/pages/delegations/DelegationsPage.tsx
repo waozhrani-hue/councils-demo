@@ -17,7 +17,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import StatusBadge from '@/components/StatusBadge';
-import type { Delegation, User, Council, PaginatedResponse } from '@/types';
+import type { Delegation, User, Council } from '@/types';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
@@ -42,8 +42,6 @@ interface Permission {
 export default function DelegationsPage() {
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [form] = Form.useForm();
 
@@ -67,19 +65,13 @@ export default function DelegationsPage() {
     queryFn: () => apiClient.get<Permission[]>('/api/v1/workflow/permissions'),
   });
 
-  const queryParams = new URLSearchParams();
-  queryParams.set('page', String(page));
-  queryParams.set('pageSize', String(pageSize));
-
   const { data, isLoading } = useQuery({
-    queryKey: ['delegations', page, pageSize],
-    queryFn: () =>
-      apiClient.get<PaginatedResponse<Delegation>>(`/api/v1/delegations?${queryParams.toString()}`),
+    queryKey: ['delegations'],
+    queryFn: () => apiClient.get<Delegation[]>('/api/v1/delegations'),
   });
 
   const createMutation = useMutation({
     mutationFn: (values: {
-      fromUserId: string;
       toUserId: string;
       scopeType: string;
       scopeJson: string;
@@ -131,7 +123,6 @@ export default function DelegationsPage() {
       }
 
       createMutation.mutate({
-        fromUserId: user?.id || '',
         toUserId: values.toUserId,
         scopeType: values.scopeType,
         scopeJson,
@@ -237,16 +228,13 @@ export default function DelegationsPage() {
 
       <Table
         columns={columns}
-        dataSource={data?.data || []}
+        dataSource={Array.isArray(data) ? data : []}
         rowKey="id"
         loading={isLoading}
         pagination={{
-          current: page,
-          pageSize,
-          total: data?.total || 0,
+          pageSize: 10,
           showSizeChanger: true,
           showTotal: (total) => `الإجمالي: ${total}`,
-          onChange: (p, ps) => { setPage(p); setPageSize(ps); },
         }}
       />
 

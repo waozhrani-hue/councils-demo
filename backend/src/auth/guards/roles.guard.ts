@@ -46,7 +46,7 @@ export class RolesGuard implements CanActivate {
     const activeDelegations = await this.prisma.delegation.findMany({
       where: {
         toUserId: user.sub,
-        state: 'ACTIVE',
+        state: 'DELEGATION_ACTIVE',
         validFrom: { lte: now },
         validUntil: { gte: now },
       },
