@@ -172,6 +172,20 @@ export class UsersService {
     });
   }
 
+  async setActive(id: string, isActive: boolean) {
+    await this.findById(id);
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: { isActive },
+      include: {
+        roles: { include: { role: true } },
+        organization: true,
+      },
+    });
+    const { passwordHash, ...result } = user;
+    return result;
+  }
+
   async removeRole(userRoleId: string) {
     const userRole = await this.prisma.userRole.findUnique({
       where: { id: userRoleId },

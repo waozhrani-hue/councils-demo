@@ -84,7 +84,7 @@ export default function TeamPage() {
     mutationFn: (values: Record<string, unknown>) =>
       apiClient.post('/api/v1/team/members', values),
     onSuccess: () => {
-      message.success('تم إنشاء العضو بنجاح');
+      message.success('تم إنشاء العضو — بانتظار اعتماد مدير النظام');
       queryClient.invalidateQueries({ queryKey: ['team-members'] });
       closeDrawer();
     },
@@ -229,7 +229,7 @@ export default function TeamPage() {
       key: 'isActive',
       width: 80,
       render: (active: boolean) => (
-        <Tag color={active ? 'green' : 'red'}>{active ? 'نشط' : 'معطل'}</Tag>
+        <Tag color={active ? 'green' : 'orange'}>{active ? 'معتمد' : 'بانتظار الاعتماد'}</Tag>
       ),
     },
     {

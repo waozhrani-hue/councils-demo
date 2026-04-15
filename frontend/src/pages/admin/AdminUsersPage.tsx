@@ -15,7 +15,7 @@ import {
   List,
   message,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined, StopOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
 import type { User, OrganizationUnit, PaginatedResponse } from '@/types';
@@ -157,6 +157,24 @@ export default function AdminUsersPage() {
     onError: (err: Error) => message.error(err.message || 'فشل إزالة الدور'),
   });
 
+  const activateMutation = useMutation({
+    mutationFn: (id: string) => apiClient.patch(`/api/v1/users/${id}/activate`),
+    onSuccess: () => {
+      message.success('تم اعتماد المستخدم');
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+    onError: (err: Error) => message.error(err.message || 'فشل اعتماد المستخدم'),
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: (id: string) => apiClient.patch(`/api/v1/users/${id}/deactivate`),
+    onSuccess: () => {
+      message.success('تم تعطيل المستخدم');
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+    onError: (err: Error) => message.error(err.message || 'فشل تعطيل المستخدم'),
+  });
+
   const refreshEditingUser = async (userId: string) => {
     try {
       const user = await apiClient.get<any>(`/api/v1/users/${userId}`);
@@ -249,7 +267,7 @@ export default function AdminUsersPage() {
       key: 'isActive',
       width: 80,
       render: (active: boolean) => (
-        <Tag color={active ? 'green' : 'red'}>{active ? 'نشط' : 'معطل'}</Tag>
+        <Tag color={active ? 'green' : 'orange'}>{active ? 'معتمد' : 'بانتظار الاعتماد'}</Tag>
       ),
     },
     {
@@ -262,10 +280,30 @@ export default function AdminUsersPage() {
     {
       title: 'الإجراءات',
       key: 'actions',
-      width: 120,
-      render: (_: unknown, record: User) => (
+      width: 200,
+      render: (_: unknown, record: any) => (
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => openDrawer(record)} />
+          {record.isActive ? (
+            <Popconfirm
+              title="تعطيل هذا المستخدم؟"
+              onConfirm={() => deactivateMutation.mutate(record.id)}
+              okText="نعم"
+              cancelText="لا"
+            >
+              <Button size="small" icon={<StopOutlined />} title="تعطيل" />
+            </Popconfirm>
+          ) : (
+            <Button
+              size="small"
+              type="primary"
+              ghost
+              icon={<CheckCircleOutlined />}
+              title="اعتماد"
+              onClick={() => activateMutation.mutate(record.id)}
+              loading={activateMutation.isPending}
+            />
+          )}
           <Popconfirm
             title="هل أنت متأكد من حذف هذا المستخدم؟"
             onConfirm={() => deleteMutation.mutate(record.id)}
